@@ -91,20 +91,63 @@ pub fn handle_wallet_method(method: &str, body_json: &Value) -> Option<Value> {
 }
 
 /// Synthesizes ERC-20 / Native Transfer logs from the 48-hour hot index.
+/// Supports standard JSON-RPC block range (`fromBlock`, `toBlock`), `address`, and `topics` matrix.
 pub fn synthesize_transfer_logs(filter: &Value) -> Vec<Value> {
     const TRANSFER_SIG: &str = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
     const NATIVE_ETH_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 
-    let filter_to: Option<String> = filter["topics"]
-        .as_array()
-        .and_then(|t| t.get(2))
-        .and_then(|t2| {
-            t2.as_str().map(|s| s.to_lowercase()).or_else(|| {
-                t2.as_array().and_then(|arr| arr.first().and_then(|v| v.as_str())).map(|s| s.to_lowercase())
-            })
-        });
+    // Helper to parse block number or tags ("latest", "earliest", "pending", hex string, u64)
+    let parse_block_num = |val: &Value, current_tip: u64| -> Option<u64> {
+        if val.is_null() {
+            return None;
+        }
+        if let Some(n) = val.as_u64() {
+            return Some(n);
+        }
+        if let Some(s) = val.as_str() {
+            let s_lower = s.to_lowercase();
+            if s_lower == "latest" || s_lower == "pending" {
+                return Some(current_tip);
+            }
+            if s_lower == "earliest" {
+                return Some(0);
+            }
+            let trimmed = s.trim_start_matches("0x");
+            return u64::from_str_radix(trimmed, 16).ok();
+        }
+        None
+    };
 
     let state = get_state().read().unwrap();
+    let current_block_tip = state.block_number.unwrap_or(0);
+
+    let from_block = filter.get("fromBlock").and_then(|v| parse_block_num(v, current_block_tip));
+    let to_block = filter.get("toBlock").and_then(|v| parse_block_num(v, current_block_tip));
+
+    // Address filter: single string or array of strings
+    let address_filter: Vec<String> = if let Some(arr) = filter["address"].as_array() {
+        arr.iter().filter_map(|v| v.as_str().map(|s| s.to_lowercase())).collect()
+    } else if let Some(addr_str) = filter["address"].as_str() {
+        vec![addr_str.to_lowercase()]
+    } else {
+        vec![]
+    };
+
+    // Topics filter: array of (null | topic_string | array of topic_strings)
+    let topics_filter = filter["topics"].as_array();
+
+    let matches_topic = |topic_filter_val: Option<&Value>, actual_topic: &str| -> bool {
+        match topic_filter_val {
+            None => true,
+            Some(v) if v.is_null() => true,
+            Some(Value::String(s)) => s.eq_ignore_ascii_case(actual_topic),
+            Some(Value::Array(arr)) => arr.iter().any(|item| {
+                item.as_str().map(|s| s.eq_ignore_ascii_case(actual_topic)).unwrap_or(false)
+            }),
+            _ => true,
+        }
+    };
+
     let mut seen_hashes = std::collections::HashSet::new();
     let mut logs = Vec::new();
 
@@ -115,11 +158,42 @@ pub fn synthesize_transfer_logs(filter: &Value) -> Vec<Value> {
                 continue;
             }
 
+            // 1. Block number filtering
+            let rec_block_num = u64::from_str_radix(record.block_number.trim_start_matches("0x"), 16).unwrap_or(0);
+            if let Some(from) = from_block {
+                if rec_block_num < from {
+                    continue;
+                }
+            }
+            if let Some(to) = to_block {
+                if rec_block_num > to {
+                    continue;
+                }
+            }
+
+            // 2. Contract/Asset address filtering
+            if !address_filter.is_empty() {
+                let matches_addr = address_filter.iter().any(|target| {
+                    target.eq_ignore_ascii_case(NATIVE_ETH_ADDRESS)
+                        || target.eq_ignore_ascii_case(&format!("{:#x}", record.to))
+                });
+                if !matches_addr {
+                    continue;
+                }
+            }
+
             let from_padded = format!("0x{:0>64}", alloy_primitives::hex::encode(record.from.as_slice()));
             let to_padded = format!("0x{:0>64}", alloy_primitives::hex::encode(record.to.as_slice()));
 
-            if let Some(ref req_to) = filter_to {
-                if !to_padded.eq_ignore_ascii_case(req_to) && !format!("{:#x}", record.to).eq_ignore_ascii_case(req_to) {
+            // 3. Topics matrix filtering (topics 0..2)
+            if let Some(topics_spec) = topics_filter {
+                if !matches_topic(topics_spec.get(0), TRANSFER_SIG) {
+                    continue;
+                }
+                if !matches_topic(topics_spec.get(1), &from_padded) {
+                    continue;
+                }
+                if !matches_topic(topics_spec.get(2), &to_padded) {
                     continue;
                 }
             }
@@ -364,4 +438,70 @@ pub fn index_from_raw_tx(raw_tx: &str, tx_hash: B256, sender: Address) {
 
     let mut state = get_state().write().unwrap();
     add_native_transfer_record(&mut state, record);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_synthesize_transfer_logs_filtering() {
+        let sender = Address::repeat_byte(0x11);
+        let receiver = Address::repeat_byte(0x22);
+
+        let record = NativeTransferRecord {
+            tx_hash: B256::repeat_byte(0x99),
+            block_hash: None,
+            block_number: "0xa".to_string(), // block 10
+            from: sender,
+            from_did: None,
+            to: receiver,
+            to_did: None,
+            value: "1000000000000000000".to_string(),
+            timestamp: 123456789,
+            v: "0x1b".to_string(),
+            r: "0x0".to_string(),
+            s: "0x0".to_string(),
+        };
+
+        {
+            let mut state = get_state().write().unwrap();
+            state.block_number = Some(15);
+            add_native_transfer_record(&mut state, record);
+        }
+
+        // 1. Matches range [5, 12]
+        let filter_in_range = json!({
+            "fromBlock": "0x5",
+            "toBlock": "0xc",
+        });
+        let logs = synthesize_transfer_logs(&filter_in_range);
+        assert!(!logs.is_empty(), "Should find log within block range [5, 12]");
+
+        // 2. Out of range [12, 15]
+        let filter_out_range = json!({
+            "fromBlock": "0xc",
+            "toBlock": "0xf",
+        });
+        let logs_out = synthesize_transfer_logs(&filter_out_range);
+        assert!(logs_out.is_empty(), "Should not find log outside block range");
+
+        // 3. Address match
+        let filter_addr = json!({
+            "address": format!("{:#x}", receiver)
+        });
+        let logs_addr = synthesize_transfer_logs(&filter_addr);
+        assert!(!logs_addr.is_empty(), "Should match by receiver address");
+
+        // 4. Topic filter
+        let from_padded = format!("0x{:0>64}", alloy_primitives::hex::encode(sender.as_slice()));
+        let filter_topic = json!({
+            "topics": [
+                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                from_padded
+            ]
+        });
+        let logs_topic = synthesize_transfer_logs(&filter_topic);
+        assert!(!logs_topic.is_empty(), "Should match by topic filter");
+    }
 }

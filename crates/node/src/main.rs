@@ -27,6 +27,9 @@ pub mod caip_rpc;
 /// Subsystem RPC handlers (CAIP, zkCompliance, State, Server).
 pub mod rpc;
 
+/// OpenTelemetry correlated tracing module.
+pub mod telemetry;
+
 use sovereign_consensus::SovereignPoolBuilder;
 use clap::Parser;
 
@@ -201,6 +204,16 @@ async fn sovereign_exex<N: FullNodeComponents>(
                                     }
                                 }
                             }
+                        } else if tx.value() > alloy_primitives::U256::ZERO {
+                            if let Ok(caller) = tx.recover_signer() {
+                                if let Ok(mut reg) = registry_lock.write() {
+                                    let cur_from = reg.account_balances.get(&caller).copied().unwrap_or(alloy_primitives::U256::ZERO);
+                                    reg.account_balances.insert(caller, cur_from.saturating_sub(tx.value()));
+                                    let cur_to = reg.account_balances.get(&to).copied().unwrap_or(alloy_primitives::U256::ZERO);
+                                    reg.account_balances.insert(to, cur_to.saturating_add(tx.value()));
+                                    tracing::info!("Updated registry balance from block tx: {:#x} -> {:#x} value={}", caller, to, tx.value());
+                                }
+                            }
                         }
                     }
                 }
@@ -328,9 +341,28 @@ fn main() {
             }
         }
 
-        if args.toy_mode || std::env::var("SOVEREIGN_TOY_MODE").is_ok() {
+        let toy_mode_active = args.toy_mode || std::env::var("SOVEREIGN_TOY_MODE").is_ok();
+        if toy_mode_active {
+            // Safety guard: refuse toy mode when real SGX hardware is present.
+            // Toy mode disables real attestation — running it on an SGX node is a security hazard.
+            let has_sgx_hw = std::path::Path::new("/dev/attestation").exists()
+                || std::path::Path::new("/dev/sgx/enclave").exists();
+            if has_sgx_hw {
+                return Err(eyre::eyre!(
+                    "Cannot start in toy mode: SGX hardware enclave detected \
+                     (/dev/attestation or /dev/sgx/enclave present). \
+                     Remove --toy-mode / SOVEREIGN_TOY_MODE for production use."
+                ));
+            }
             eprintln!("{}", sovereign_crypto::toy_mode::TOY_MODE_WARNING);
             info!("⚠️ Running in TOY MODE — reduced security parameters active");
+
+            // Cross-wire SOVEREIGN_MOCK_SGX so that all SGX shims in attestation,
+            // stateless.rs, proxy.rs, and forward.rs correctly bypass real DCAP paths.
+            // SAFETY: environment variable mutation; safe at startup before any threads touch it.
+            #[allow(unused_unsafe)]
+            unsafe { std::env::set_var("SOVEREIGN_MOCK_SGX", "1"); }
+            info!("⚠️ TOY MODE: SOVEREIGN_MOCK_SGX auto-set — mock SGX attestation active");
         }
 
         let proxy_port = args.sov_proxy_port;
@@ -440,7 +472,7 @@ manifold_quorum_threshold = 100
 social_promotion_threshold = 0.1
 default_pq_scheme = "mldsa"
 default_crypto_profile = "ethereum"
-saga_intent_timeout_seconds = 86400
+saga_intent_timeout_epochs = 43200
 committee_threshold = 0.67
 connectivity_decay_penalty = 0.10
 "#;
@@ -461,7 +493,7 @@ connectivity_decay_penalty = 0.10
         assert_eq!(config.dynamic_cfg.social_promotion_threshold, 0.1);
         assert_eq!(config.dynamic_cfg.default_pq_scheme, "mldsa");
         assert_eq!(config.dynamic_cfg.default_crypto_profile, "ethereum");
-        assert_eq!(config.dynamic_cfg.saga_intent_timeout_seconds, 86400);
+        assert_eq!(config.dynamic_cfg.saga_intent_timeout_epochs, 43200);
         assert_eq!(config.dynamic_cfg.committee_threshold, 0.67);
         assert_eq!(config.dynamic_cfg.connectivity_decay_penalty, 0.10);
 

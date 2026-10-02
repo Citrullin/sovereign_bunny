@@ -236,6 +236,7 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                                     sovereign_consensus::pq_registry::KeyTier::Classical => 0u64,
                                                     sovereign_consensus::pq_registry::KeyTier::QuantumReady => 1u64,
                                                     sovereign_consensus::pq_registry::KeyTier::QuantumOnly => 2u64,
+                                                    sovereign_consensus::pq_registry::KeyTier::QuantumWireStripped => 3u64,
                                                 };
                                                 let mut out = vec![0u8; 192];
                                                 out[24..32].copy_from_slice(&sequence.to_be_bytes());
@@ -493,6 +494,7 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                     }
                     continue;
                 }
+
 
 
 
@@ -1185,19 +1187,28 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                         for (hash, block) in &reg.lattice_blocks {
                             let block_acc = format!("{:#x}", block.account).to_lowercase();
                             if target_addr_str.is_empty() || block_acc == target_addr_str {
-                                let (tx_type, title, recipient_str, amount_str) = match &block.payload {
+                                let (tx_type, title, recipient_str, amount_str, cd_str) = match &block.payload {
                                     sovereign_consensus::stateless::LatticePayload::Send { recipient, amount } => {
-                                        ("send", "Lattice Send", format!("{:#x}", recipient), format!("{amount} TBL"))
+                                        let mut cd_bytes = [0u8; 36];
+                                        cd_bytes[0..4].copy_from_slice(&[0x38, 0x82, 0x77, 0x24]); // sweepTransfer
+                                        cd_bytes[16..36].copy_from_slice(recipient.as_slice());
+                                        ("send", "Lattice Send", format!("{:#x}", recipient), format!("{amount} TBL"), format!("0x{}", hex::encode(cd_bytes)))
                                     }
                                     sovereign_consensus::stateless::LatticePayload::Receive { send_block_hash, amount } => {
-                                        ("receive", "Claim Settle", format!("{:#x}", send_block_hash), format!("{amount} TBL"))
+                                        ("receive", "Claim Settle", format!("{:#x}", send_block_hash), format!("{amount} TBL"), format!("{:#x}", send_block_hash))
                                     }
-                                    sovereign_consensus::stateless::LatticePayload::ContractCall { target, .. } => {
+                                    sovereign_consensus::stateless::LatticePayload::ContractCall { target, data, .. } => {
                                         let is_did = *target == sovereign_consensus::system_registry::SYSTEM_DID_REGISTRY;
                                         let t_type = if is_did { "did" } else { "precompile" };
                                         let t_title = if is_did { "Register DID (0x03)" } else { "Contract Call" };
                                         let t_amt = if is_did { "Post-Quantum DID Document".to_string() } else { "0.0 TBL".to_string() };
-                                        (t_type, t_title, format!("{:#x}", target), t_amt)
+                                        (t_type, t_title, format!("{:#x}", target), t_amt, format!("{:#x}", data))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::CommitNote { note } => {
+                                        ("commit_note", "Commit Blind Note", format!("{:#x}", note.note_commitment.commitment), "Blind Note".to_string(), format!("{:#x}", note.note_commitment.commitment))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::AbsorbNote { absorb } => {
+                                        ("absorb_note", "Absorb Blind Note", format!("{:#x}", absorb.nullifier), "Blind Note".to_string(), format!("{:#x}", absorb.nullifier))
                                     }
                                 };
                                 entries.push(json!({
@@ -1206,7 +1217,7 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                     "title": title,
                                     "counterparty": recipient_str,
                                     "amount": amount_str,
-                                    "calldata": format!("{:#x}", hash),
+                                    "calldata": cd_str,
                                     "epoch": epoch,
                                     "timestamp": now,
                                     "status": "Settled",
@@ -1240,19 +1251,28 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                         let epoch = reg.current_epoch.max(1);
                         for (hash, block) in &reg.lattice_blocks {
                             if format!("{:#x}", hash).to_lowercase() == target_hash_str || format!("{hash:?}").to_lowercase() == target_hash_str {
-                                let (tx_type, title, recipient_str, amount_str) = match &block.payload {
+                                let (tx_type, title, recipient_str, amount_str, cd_str) = match &block.payload {
                                     sovereign_consensus::stateless::LatticePayload::Send { recipient, amount } => {
-                                        ("send", "Lattice Send", format!("{:#x}", recipient), format!("{amount} TBL"))
+                                        let mut cd_bytes = [0u8; 36];
+                                        cd_bytes[0..4].copy_from_slice(&[0x38, 0x82, 0x77, 0x24]); // sweepTransfer
+                                        cd_bytes[16..36].copy_from_slice(recipient.as_slice());
+                                        ("send", "Lattice Send", format!("{:#x}", recipient), format!("{amount} TBL"), format!("0x{}", hex::encode(cd_bytes)))
                                     }
                                     sovereign_consensus::stateless::LatticePayload::Receive { send_block_hash, amount } => {
-                                        ("receive", "Claim Settle", format!("{:#x}", send_block_hash), format!("{amount} TBL"))
+                                        ("receive", "Claim Settle", format!("{:#x}", send_block_hash), format!("{amount} TBL"), format!("{:#x}", send_block_hash))
                                     }
-                                    sovereign_consensus::stateless::LatticePayload::ContractCall { target, .. } => {
+                                    sovereign_consensus::stateless::LatticePayload::ContractCall { target, data, .. } => {
                                         let is_did = *target == sovereign_consensus::system_registry::SYSTEM_DID_REGISTRY;
                                         let t_type = if is_did { "did" } else { "precompile" };
                                         let t_title = if is_did { "Register DID (0x03)" } else { "Contract Call" };
                                         let t_amt = if is_did { "Post-Quantum DID Document".to_string() } else { "0.0 TBL".to_string() };
-                                        (t_type, t_title, format!("{:#x}", target), t_amt)
+                                        (t_type, t_title, format!("{:#x}", target), t_amt, format!("{:#x}", data))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::CommitNote { note } => {
+                                        ("commit_note", "Commit Blind Note", format!("{:#x}", note.note_commitment.commitment), "Blind Note".to_string(), format!("{:#x}", note.note_commitment.commitment))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::AbsorbNote { absorb } => {
+                                        ("absorb_note", "Absorb Blind Note", format!("{:#x}", absorb.nullifier), "Blind Note".to_string(), format!("{:#x}", absorb.nullifier))
                                     }
                                 };
                                 found = Some(json!({
@@ -1261,7 +1281,7 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                     "title": title,
                                     "counterparty": recipient_str,
                                     "amount": amount_str,
-                                    "calldata": format!("{:#x}", hash),
+                                    "calldata": cd_str,
                                     "epoch": epoch,
                                     "timestamp": now,
                                     "status": "Settled",
@@ -1644,6 +1664,7 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                              sovereign_consensus::pq_registry::KeyTier::Classical => 0u64,
                                              sovereign_consensus::pq_registry::KeyTier::QuantumReady => 1u64,
                                              sovereign_consensus::pq_registry::KeyTier::QuantumOnly => 2u64,
+                                              sovereign_consensus::pq_registry::KeyTier::QuantumWireStripped => 3u64,
                                          };
                                          
                                          let mut out = Vec::with_capacity(192);
@@ -1942,6 +1963,27 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                     } else {
                                         None
                                     }
+                                } else if let Some(dispatch_res) = {
+                                    let target_addr_opt = if resolved_calldata.len() >= 36 && (resolved_calldata[0..4] == [0x74, 0x5c, 0xed, 0x80] || resolved_calldata[0..4] == [0x94, 0x82, 0x11, 0x22]) {
+                                        Some(Address::from_slice(&resolved_calldata[16..36]))
+                                    } else if resolved_calldata.len() >= 20 {
+                                        Some(Address::from_slice(&resolved_calldata[0..20]))
+                                    } else {
+                                        None
+                                    };
+                                    let caller_addr = call_params["from"].as_str().and_then(|s| s.parse::<Address>().ok()).unwrap_or(Address::ZERO);
+                                    let car_ref = target_addr_opt.as_ref().and_then(|a| reg.account_registers.get(a)).or_else(|| reg.account_registers.get(&caller_addr));
+                                    sovereign_consensus::system_contracts::RegisterPrecompileRouter::dispatch(
+                                        &target_precompile,
+                                        &caller_addr,
+                                        &resolved_calldata,
+                                        car_ref,
+                                    )
+                                } {
+                                    match dispatch_res {
+                                        Ok(bytes) => Some(format!("0x{}", alloy_primitives::hex::encode(&bytes))),
+                                        Err(_) => Some("0x".to_string()),
+                                    }
                                 } else {
                                     None
                                 }
@@ -2124,7 +2166,7 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                             let _is_sys_target = target_to_opt.map(|t| sovereign_consensus::system_registry::is_system_address(&t)).unwrap_or(false);
 
                             let total_available = settled_balance.saturating_add(inbox_value);
-                            if total_available < upfront_cost && !(is_pure_self_send && !unclaimed_hashes.is_empty()) {
+                            if total_available < upfront_cost && !is_did_reg && !(is_pure_self_send && !unclaimed_hashes.is_empty()) {
                                 eprintln!("[CAIP_RPC] Rejecting tx for {:#x}: insufficient balance (available={}, upfront={})", sender, total_available, upfront_cost);
                                 send_error(&mut client_stream, &id, -32000, "insufficient funds for gas * price + value").await;
                                 continue;
@@ -2149,8 +2191,14 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                         }
                     };
 
+                    let computed_tx_hash = decode_tx_envelope(raw_tx).map(|tx| *tx.tx_hash());
                     if let Some(err) = fwd_result.get("error") {
                         eprintln!("[CAIP_RPC] RETH REJECTED eth_sendRawTransaction: {:?}", err);
+                        // Even if already known or rejected by Reth mempool, index system transactions on-chain
+                        if let Some(tx_hash) = computed_tx_hash {
+                            let sender = sender_opt.unwrap_or_else(|| decode_sender(raw_tx).unwrap_or_default());
+                            index_from_raw_tx(raw_tx, tx_hash, sender);
+                        }
                         send_result(&mut client_stream, &id, fwd_result).await;
                         continue;
                     }

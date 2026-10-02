@@ -234,14 +234,15 @@ pub async fn handle_get_transaction_count(reth_port: u16, account: Address) -> u
     reth_count.max(seq)
 }
 
-static LAST_SYNCED_BLOCK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SYNCED_BLOCKS: std::sync::OnceLock<std::sync::RwLock<std::collections::HashMap<u16, u64>>> = std::sync::OnceLock::new();
 static SYNC_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+fn get_synced_blocks() -> &'static std::sync::RwLock<std::collections::HashMap<u16, u64>> {
+    SYNCED_BLOCKS.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
+}
+
 pub async fn sync_hot_storage(reth_port: u16) {
-    let _guard = match SYNC_MUTEX.try_lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
+    let _guard = SYNC_MUTEX.lock().await;
 
     let block_num_req = json!({ "jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 9999 });
     let latest_hex = match forward_to_reth_http(reth_port, &block_num_req).await {
@@ -256,7 +257,7 @@ pub async fn sync_hot_storage(reth_port: u16) {
     };
 
     let latest_num = u64::from_str_radix(latest_hex.trim_start_matches("0x"), 16).unwrap_or(0);
-    let last_synced = LAST_SYNCED_BLOCK.load(std::sync::atomic::Ordering::Relaxed);
+    let last_synced = get_synced_blocks().read().unwrap().get(&reth_port).copied().unwrap_or(0);
     let start_num = if last_synced > 0 { last_synced + 1 } else { 0 };
     if start_num > latest_num && last_synced > 0 {
         return;
@@ -301,13 +302,19 @@ pub async fn sync_hot_storage(reth_port: u16) {
                 if let Some(send_hashes) = auto_claims_opt {
                     let mut reg = get_registry().write().unwrap();
                     for send_hash in send_hashes {
+                        let mut send_amount = U256::ZERO;
+                        if let Some(sb) = reg.lattice_blocks.get(&send_hash) {
+                            if let sovereign_consensus::stateless::LatticePayload::Send { amount, .. } = &sb.payload {
+                                send_amount = *amount;
+                            }
+                        }
                         let receive_block = sovereign_consensus::stateless::LatticeBlock {
                             account: from_addr,
                             previous_hash: B256::ZERO,
                             sequence: 1,
                             payload: sovereign_consensus::stateless::LatticePayload::Receive {
                                 send_block_hash: send_hash,
-                                amount: U256::from(0),
+                                amount: send_amount,
                             },
                             signature: vec![],
                             static_witnesses: vec![],
@@ -324,7 +331,7 @@ pub async fn sync_hot_storage(reth_port: u16) {
                             from_did: reg.get_did_by_address(&from_addr),
                             to: from_addr,
                             to_did: reg.get_did_by_address(&from_addr),
-                            value: "0".to_string(),
+                            value: send_amount.to_string(),
                             timestamp: now_secs(),
                             v: "0x1c".to_string(),
                             r: "0x0".to_string(),
@@ -371,7 +378,12 @@ pub async fn sync_hot_storage(reth_port: u16) {
                 }
 
                 if value > U256::ZERO && to_addr != Address::ZERO {
-                    let reg = get_registry().read().unwrap();
+                    let mut reg = get_registry().write().unwrap();
+                    let cur_from = reg.account_balances.get(&from_addr).copied().unwrap_or(U256::ZERO);
+                    reg.account_balances.insert(from_addr, cur_from.saturating_sub(value));
+                    let cur_to = reg.account_balances.get(&to_addr).copied().unwrap_or(U256::ZERO);
+                    reg.account_balances.insert(to_addr, cur_to.saturating_add(value));
+
                     let mut state = get_state().write().unwrap();
                     let record = NativeTransferRecord {
                         tx_hash,
@@ -413,5 +425,5 @@ pub async fn sync_hot_storage(reth_port: u16) {
             }
         }
     }
-    LAST_SYNCED_BLOCK.store(latest_num, std::sync::atomic::Ordering::Relaxed);
+    get_synced_blocks().write().unwrap().insert(reth_port, latest_num);
 }
