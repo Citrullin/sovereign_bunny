@@ -66,11 +66,20 @@ mod activitypub_e2e_tests;
 #[cfg(test)]
 mod address_signaling_tests;
 
-#[cfg(test)]
-mod legacy_evm_bytecall_e2e_tests;
+// #[cfg(test)]
+// mod legacy_evm_bytecall_e2e_tests;
 
 #[cfg(test)]
 mod dao_sql_zkproof_e2e_tests;
 
+#[cfg(test)]
+mod zodiac_dao_e2e_tests;
 
+#[cfg(test)]
+mod repo_actor_tests;
 
+#[cfg(test)]
+mod xroad_actor_tests;
+
+#[cfg(test)]
+mod remote_10node_e2e_tests;

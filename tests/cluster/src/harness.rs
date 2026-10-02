@@ -95,7 +95,11 @@ impl Drop for ProcessNode {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = fs::remove_dir_all(&self.datadir);
+        if !std::thread::panicking() {
+            let _ = fs::remove_dir_all(&self.datadir);
+        } else {
+            eprintln!("[ProcessNode Drop] Preserving datadir and logs at {} due to panic", self.datadir);
+        }
     }
 }
 

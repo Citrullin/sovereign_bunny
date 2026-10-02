@@ -22,6 +22,7 @@ fn test_activitypub_end_to_end_manifold_federation() {
     let alice_seed = B256::repeat_byte(0x11);
     let alice_did_doc = SovereignDidDocument::derive_from_seed(alice_seed);
     let alice_addr = alice_did_doc.evm_address;
+    registry.account_balances.insert(alice_addr, alloy_primitives::U256::from(100_000_000_000_000_000u64));
 
     // Register Alice in zkDNS (SYSTEM_DID_REGISTRY 0x00...03)
     let reg_did_action = SystemAction::RegisterDid {

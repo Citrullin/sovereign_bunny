@@ -18,6 +18,9 @@ fn test_address_signaling_and_guarded_swarm_pipeline() {
     let monitored_account = Address::repeat_byte(0x55);
     let app_context = b"dao.governance.treasury.notifications";
 
+    // 0. Register DID for caller
+    registry.address_to_did.insert(monitored_account, "did:sovereign:1337:0x55".to_string());
+
     // 1. Inscribe Blinded Signal Intent to SYSTEM_SIGNAL_REGISTRY (0x54)
     let topic_id = SignalEnvelope::derive_topic_id(&monitored_account, app_context);
     let cuckoo_root = B256::repeat_byte(0x88);

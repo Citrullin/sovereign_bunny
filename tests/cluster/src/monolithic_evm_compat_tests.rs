@@ -242,6 +242,7 @@ fn test_given_account_lattice_double_spend_when_paxos_orders_and_snowman_finaliz
         locked_at: 0,
         paused_context: None,
         snapshot_size: 0,
+        account_flags: 0,
         merit_rank: sovereign_consensus::jurisdiction::MeritRank::Rank2,
         epochs_at_current_rank: 0,
         cached_compliance: None,

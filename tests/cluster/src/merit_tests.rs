@@ -34,6 +34,7 @@ async fn test_given_two_node_cluster_when_funds_transferred_then_settled_balance
         0,
     ).await;
     assert!(!reg_hash.is_empty(), "Alice DID registration must succeed on-chain");
+    node_a.wait_for_receipt(&reg_hash).await;
 
     let bob_seed = alloy_primitives::keccak256(b"bob_settled_balance_seed");
     let bob_doc = SovereignDidDocument::derive_from_seed(bob_seed);
@@ -79,7 +80,7 @@ async fn test_given_two_node_cluster_when_funds_transferred_then_settled_balance
     let raw_tx_line = fund_stdout.lines()
         .find(|l| l.contains("Broadcast Succeeded! Tx Hash:"))
         .and_then(|l| l.split(": ").nth(1))
-        .expect("Failed to extract broadcast tx hash from did_tool output");
+        .unwrap_or_else(|| panic!("Failed to extract broadcast tx hash from did_tool output. stdout:\n{}\nstderr:\n{}", fund_stdout, fund_stderr));
     let tx_hash = raw_tx_line.trim().trim_matches('"');
     node_a.wait_for_receipt(tx_hash).await;
 

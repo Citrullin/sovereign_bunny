@@ -61,6 +61,7 @@ async fn test_given_two_node_cluster_when_multiple_validators_registered_then_st
     let fund_raw = fund_stdout.lines().find(|l| l.contains("Signed Transaction Hex:")).unwrap().split(": ").nth(1).unwrap();
     let fund_tx_hash = node_a.send_raw_tx(fund_raw).await;
     assert!(!fund_tx_hash.is_empty(), "Funding transaction to Validator 2 must succeed");
+    node_a.wait_for_receipt(&fund_tx_hash).await;
 
     let tx_val2_a = node_a.register_did_onchain(
         &val2_priv_hex,
@@ -85,29 +86,41 @@ async fn test_given_two_node_cluster_when_multiple_validators_registered_then_st
     // ── AND THEN: Both Validator 1 and Validator 2 are confirmed registered on both Node A and Node B ──
     for (node_label, node) in [("Node A", node_a), ("Node B", node_b)] {
         for (val_label, doc) in [("Val 1", &doc1), ("Val 2", &doc2)] {
-            let res = node.client.post(&node.proxy_url)
-                .json(&serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "eth_call",
-                    "params": [
-                        {
-                            "to": format!("{:#x}", sovereign_consensus::system_registry::SYSTEM_DID_REGISTRY),
-                            "data": format!("0x{}", alloy_primitives::hex::encode(doc.evm_address.as_slice()))
-                        },
-                        "latest"
-                    ],
-                    "id": 1
-                }))
-                .send()
-                .await
-                .unwrap()
-                .json::<serde_json::Value>()
-                .await
-                .unwrap();
+            let start = std::time::Instant::now();
+            let mut hex_val = String::from("0x");
+            let mut last_res = serde_json::Value::Null;
+            while start.elapsed() < std::time::Duration::from_secs(10) {
+                let res = node.client.post(&node.proxy_url)
+                    .json(&serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "eth_call",
+                        "params": [
+                            {
+                                "to": format!("{:#x}", sovereign_consensus::system_registry::SYSTEM_DID_REGISTRY),
+                                "data": format!("0x{}", alloy_primitives::hex::encode(doc.evm_address.as_slice()))
+                            },
+                            "latest"
+                        ],
+                        "id": 1
+                    }))
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<serde_json::Value>()
+                    .await
+                    .unwrap();
 
-            assert!(res["error"].is_null(), "{} {} DID query failed: {:?}", node_label, val_label, res);
-            let hex_val = res["result"].as_str().unwrap_or("0x");
-            assert!(hex_val.len() > 2, "{} {} must be registered on-chain. result: {:?}", node_label, val_label, res);
+                if res["error"].is_null() {
+                    let s = res["result"].as_str().unwrap_or("0x");
+                    if s.len() > 2 {
+                        hex_val = s.to_string();
+                        break;
+                    }
+                }
+                last_res = res;
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            }
+            assert!(hex_val.len() > 2, "{} {} must be registered on-chain. result: {:?}", node_label, val_label, last_res);
         }
     }
 }

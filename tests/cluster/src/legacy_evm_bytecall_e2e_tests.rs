@@ -24,6 +24,7 @@ async fn test_given_legacy_evm_wallet_when_raw_bytecalls_executed_then_system_st
     let seed = B256::repeat_byte(0x42);
     let user_did_doc = SovereignDidDocument::derive_from_seed(seed);
     let user_address = user_did_doc.evm_address;
+    registry.account_balances.insert(user_address, alloy_primitives::U256::from(100_000_000_000_000_000u64));
 
     let config = EmbeddedDesktopConfig::default();
     let embedded_node = EmbeddedDesktopNode::spawn(config, seed).await;
