@@ -30,10 +30,10 @@ pub struct SagaActor {
     pub recipient: Address,
     /// Intended token amount.
     pub amount: U256,
-    /// Intent creation timestamp.
+    /// Intent creation epoch number.
     pub created_at: u64,
-    /// Expiration window in seconds.
-    pub timeout_seconds: u64,
+    /// Expiration window in epochs (not wall-clock seconds — the network is async/epoch-based).
+    pub timeout_epochs: u64,
 }
 
 /// Backward compatibility alias
@@ -41,12 +41,13 @@ pub type CrossManifoldActor = SagaActor;
 
 impl SagaActor {
     /// Initializes a new Saga Actor in `InitiateIntent` state.
-    pub fn new(actor_id: B256, sender: Address, recipient: Address, amount: U256, current_time: u64) -> Self {
+    /// `current_epoch` is the current epoch number at creation time.
+    pub fn new(actor_id: B256, sender: Address, recipient: Address, amount: U256, current_epoch: u64) -> Self {
         let registry_lock = crate::registry::get_registry();
         let timeout = if let Ok(reg) = registry_lock.try_read() {
-            reg.dynamic_cfg.read().unwrap().saga_intent_timeout_seconds
+            reg.dynamic_cfg.read().unwrap().saga_intent_timeout_epochs
         } else {
-            86400
+            43200 // default: 43200 epochs ≈ 24h at 2s/epoch
         };
 
         Self {
@@ -55,8 +56,8 @@ impl SagaActor {
             sender,
             recipient,
             amount,
-            created_at: current_time,
-            timeout_seconds: timeout,
+            created_at: current_epoch,
+            timeout_epochs: timeout,
         }
     }
 
@@ -83,16 +84,16 @@ impl SagaActor {
         self.state = ActorState::Rollback;
     }
 
-    /// Evaluates timeout conditions and auto-triggers Rollback if expired.
-    pub fn evaluate_timeout(&mut self, current_time: u64) -> bool {
+    /// Evaluates timeout conditions based on `current_epoch` and auto-triggers Rollback if expired.
+    pub fn evaluate_timeout(&mut self, current_epoch: u64) -> bool {
         let registry_lock = crate::registry::get_registry();
         let timeout = if let Ok(reg) = registry_lock.try_read() {
-            reg.dynamic_cfg.read().unwrap().saga_intent_timeout_seconds
+            reg.dynamic_cfg.read().unwrap().saga_intent_timeout_epochs
         } else {
-            self.timeout_seconds
+            self.timeout_epochs
         };
 
-        if self.state != ActorState::Commit && current_time > (self.created_at + timeout) {
+        if self.state != ActorState::Commit && current_epoch > (self.created_at + timeout) {
             self.rollback();
             true
         } else {

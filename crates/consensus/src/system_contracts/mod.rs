@@ -8,6 +8,8 @@ pub mod saga;
 pub mod shadow_contract;
 pub mod register_precompiles;
 pub mod sql_engine;
+pub mod compliance;
+pub mod sanction_set;
 
 pub use actuator::*;
 pub use ai_merit::*;
@@ -17,3 +19,5 @@ pub use saga::*;
 pub use shadow_contract::*;
 pub use register_precompiles::*;
 pub use sql_engine::*;
+pub use compliance::*;
+pub use sanction_set::*;

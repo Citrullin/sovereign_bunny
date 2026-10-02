@@ -20,6 +20,59 @@ pub struct NetworkGenesisConfig {
     /// Genesis sharding parameters
     #[serde(default)]
     pub shard_genesis: ShardGenesisConfig,
+    /// Cross-manifold native token flow limit configuration
+    #[serde(default)]
+    pub cross_manifold_liquidity: CrossManifoldLiquidityConfig,
+    /// Declarative pre-initialized genesis graph accounts (contracts, DAOs, maintainers)
+    #[serde(default)]
+    pub graph_accounts: Vec<GenesisGraphAccount>,
+    /// Initial Zanzibar ReBAC relationship tuples active at Epoch 0
+    #[serde(default)]
+    pub initial_rebac_tuples: Vec<GenesisRelationTuple>,
+    /// Pre-deployed EVM smart contracts at genesis (bytecode, balance, storage)
+    #[serde(default)]
+    pub predeployed_contracts: Vec<GenesisContract>,
+    /// Pre-seeded unspent blind notes at genesis
+    #[serde(default)]
+    pub genesis_blind_notes: Vec<GenesisBlindNote>,
+}
+
+/// Scope of the cross-manifold liquidity outflow limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FlowLimitScope {
+    /// Outflow across all manifold destinations combined <= max_native_flow_fraction
+    Global,
+    /// Outflow per (source, destination) pair <= max_native_flow_fraction
+    PerPair,
+}
+
+impl Default for FlowLimitScope {
+    fn default() -> Self {
+        Self::Global
+    }
+}
+
+/// Cross-manifold native token flow limit (as a fraction of total supply per epoch).
+/// Prevents liquidity drain that would compromise network functionality (20-33% safe range).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossManifoldLiquidityConfig {
+    /// Maximum fraction of total native supply that can cross manifold boundaries in a single epoch.
+    /// Default: 0.20 (20%). Max recommended: 0.33 (33%).
+    pub max_native_flow_fraction: f64,
+    /// Cooldown epochs before the limit resets after hitting the cap.
+    pub flow_cooldown_epochs: u64,
+    /// Scope of limit evaluation (Global vs PerPair).
+    pub limit_scope: FlowLimitScope,
+}
+
+impl Default for CrossManifoldLiquidityConfig {
+    fn default() -> Self {
+        Self {
+            max_native_flow_fraction: 0.20,
+            flow_cooldown_epochs: 3,
+            limit_scope: FlowLimitScope::Global,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,16 +151,104 @@ impl Default for NetworkGenesisConfig {
                     activation_epoch: 0,
                 },
                 SlotSchemaConfig {
+                    slot_id: 5,
+                    name: "X-Road Service Descriptor".to_string(),
+                    plugin_name: "authority.xroad_descriptor".to_string(),
+                    version: 1,
+                    activation_epoch: 0,
+                },
+                SlotSchemaConfig {
+                    slot_id: 6,
+                    name: "Supply Chain Interface Commitment".to_string(),
+                    plugin_name: "vcs.interface_contract".to_string(),
+                    version: 1,
+                    activation_epoch: 0,
+                },
+                SlotSchemaConfig {
                     slot_id: 7,
                     name: "Reputation & Merit Score".to_string(),
                     plugin_name: "reputation.merit".to_string(),
                     version: 1,
                     activation_epoch: 0,
                 },
+                SlotSchemaConfig {
+                    slot_id: 8,
+                    name: "eIDAS 2.0 LOTL Root Anchor".to_string(),
+                    plugin_name: "identity.lotl_root".to_string(),
+                    version: 1,
+                    activation_epoch: 0,
+                },
             ],
             shard_genesis: ShardGenesisConfig::default(),
+            cross_manifold_liquidity: CrossManifoldLiquidityConfig::default(),
+            graph_accounts: Vec::new(),
+            initial_rebac_tuples: Vec::new(),
+            predeployed_contracts: Vec::new(),
+            genesis_blind_notes: Vec::new(),
         }
     }
+}
+
+/// Pre-deployed EVM smart contract at genesis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisContract {
+    pub address: Address,
+    pub name: String,
+    #[serde(default)]
+    pub balance: alloy_primitives::U256,
+    pub runtime_code: alloy_primitives::Bytes,
+    #[serde(default)]
+    pub storage: std::collections::BTreeMap<alloy_primitives::B256, alloy_primitives::B256>,
+}
+
+/// Pre-seeded unspent blind note at genesis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisBlindNote {
+    pub commitment: alloy_primitives::B256,
+    pub target_account: Address,
+    pub target_slot: u16,
+    #[serde(default)]
+    pub value: alloy_primitives::U256,
+    pub encrypted_ciphertext: alloy_primitives::Bytes,
+    pub ephemeral_pubkey: alloy_primitives::Bytes,
+    pub gossip_topic: alloy_primitives::B256,
+    #[serde(default)]
+    pub manifold_id: u64,
+    pub nullifier: alloy_primitives::B256,
+    pub iroh_cid: Option<String>,
+}
+
+/// Initial polymorphic slot commitment at genesis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisSlotCommitment {
+    pub slot_id: u16,
+    pub plugin_id: String,
+    pub commitment: alloy_primitives::B256,
+}
+
+/// An account or contract pre-registered into the genesis graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisGraphAccount {
+    pub address: Address,
+    /// Entity type: "DAO", "Contract", "GitRepo", "SharedResource", "User"
+    pub entity_kind: String,
+    /// Initial native currency balance
+    #[serde(default)]
+    pub initial_balance: alloy_primitives::U256,
+    /// Associated DID if applicable
+    pub did: Option<String>,
+    /// Pre-mounted slot commitments (Slot 0 for DID, Slot 1 for ReBAC SMT, Slot 3 for Git HEAD)
+    #[serde(default)]
+    pub initial_slots: Vec<GenesisSlotCommitment>,
+}
+
+/// Initial Zanzibar ReBAC tuple to be indexed into precompile 0x61 at genesis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenesisRelationTuple {
+    pub namespace: u32,
+    pub object_id: alloy_primitives::B256,
+    pub relation: u32,
+    pub subject: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,8 +396,9 @@ pub struct DynamicConfig {
     /// The next cryptographic profile to activate at the switch block height.
     #[serde(default)]
     pub next_crypto_profile: Option<String>,
-    /// Saga intent validity window / timeout in seconds (e.g., 86400).
-    pub saga_intent_timeout_seconds: u64,
+    /// Saga intent validity window in epochs (e.g. 43200 epochs ≈ 24h at 2s/epoch).
+    /// The network is epoch-based and async — wall-clock seconds have no meaning here.
+    pub saga_intent_timeout_epochs: u64,
     /// Threshold to reach orchestrator quorum for a Saga Intent (e.g. 0.67).
     pub committee_threshold: f64,
     /// Decay penalty applied to offline orchestrators (e.g. 0.10).
@@ -299,7 +441,7 @@ impl Default for DynamicConfig {
             default_crypto_profile: "ethereum".to_string(),
             profile_switch_block_height: None,
             next_crypto_profile: None,
-            saga_intent_timeout_seconds: 86400,
+            saga_intent_timeout_epochs: 43200,
             committee_threshold: 0.67,
             connectivity_decay_penalty: 0.10,
             parallel_execution_engine: "wave".to_string(),

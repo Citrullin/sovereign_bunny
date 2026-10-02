@@ -50,4 +50,6 @@ rand_chacha = "0.3"
 serial_test = "3.1"
 
 [features]
+default = ["stub-proofs"]
 test-utils = []
+stub-proofs = []

@@ -76,8 +76,8 @@ pub struct AsyncIntent {
     pub recipient: Address,
     /// Token amount locked.
     pub amount: U256,
-    /// Expiration timestamp.
-    pub expires_at: u64,
+    /// Expiration epoch number (not Unix timestamp — the network is async/epoch-based).
+    pub expires_at_epoch: u64,
     /// List of orchestrator addresses and their signatures voting to commit/verify this intent.
     pub orchestrator_signatures: Vec<(Address, Bytes)>,
 }
@@ -87,12 +87,13 @@ pub type SagaIntent = AsyncIntent;
 
 impl AsyncIntent {
     /// Creates a new async intent.
-    pub fn new(intent_id: B256, sender: Address, recipient: Address, amount: U256, current_time: u64) -> Self {
+    /// `current_epoch` is the current epoch number at creation time.
+    pub fn new(intent_id: B256, sender: Address, recipient: Address, amount: U256, current_epoch: u64) -> Self {
         let registry_lock = crate::registry::get_registry();
         let timeout = if let Ok(reg) = registry_lock.read() {
-            reg.dynamic_cfg.read().unwrap().saga_intent_timeout_seconds
+            reg.dynamic_cfg.read().unwrap().saga_intent_timeout_epochs
         } else {
-            86400
+            43200 // default: 43200 epochs ≈ 24h at 2s/epoch
         };
 
         Self {
@@ -100,14 +101,14 @@ impl AsyncIntent {
             sender,
             recipient,
             amount,
-            expires_at: current_time + timeout,
+            expires_at_epoch: current_epoch + timeout,
             orchestrator_signatures: Vec::new(),
         }
     }
 
-    /// Checks if the intent has expired.
-    pub fn is_expired(&self, current_time: u64) -> bool {
-        current_time > self.expires_at
+    /// Checks if the intent has expired by comparing against the current epoch number.
+    pub fn is_expired(&self, current_epoch: u64) -> bool {
+        current_epoch > self.expires_at_epoch
     }
 
     /// Verifies the consensus quorum of orchestrator signatures, enforcing Zero Latency Quantum Trigger requirements.
@@ -264,6 +265,7 @@ mod tests {
     use ed25519_dalek::{SigningKey, Signer};
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_async_intent_verify_consensus() {
         let registry_lock = crate::registry::get_registry();
         let mut registry = registry_lock.write().unwrap();
@@ -286,7 +288,10 @@ mod tests {
         let (did, _) = did_peer::DIDPeer::create_peer_did(&keys, None).unwrap();
         let addr = Address::repeat_byte(0x77);
 
-        registry.add_mock_validator(did.clone(), addr, [0x99; 32]);
+        registry.peer_keys.insert(did.clone(), [0x01; 32]);
+        registry.address_to_did.insert(addr, did.clone());
+        registry.validators.insert(did.clone(), crate::registry::ValidatorType::HardwareTEE);
+        registry.reputation.insert(did.clone(), 1.0);
         drop(registry);
 
         let mut committee = CrossChainRelayCommittee::default();

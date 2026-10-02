@@ -279,7 +279,7 @@ pub fn compute_lattice_balance(
     reg: &crate::registry::ValidatorRegistry,
     initial_balance: alloy_primitives::U256,
 ) -> alloy_primitives::U256 {
-    let mut balance = initial_balance;
+    let mut balance = initial_balance.max(reg.get_account_balance(&address));
 
     // Build a quick local set of claimed sends
     let mut claimed = std::collections::HashSet::new();
@@ -430,6 +430,11 @@ where
                 } else {
                     false
                 };
+                let is_note_op = if let Some(to) = transaction.to() {
+                    to == crate::system_registry::SYSTEM_NOTE_REGISTRY
+                } else {
+                    false
+                };
 
                 if !has_did {
                     if is_claim {
@@ -443,6 +448,9 @@ where
                                 InvalidTransactionError::TxTypeNotSupported.into(),
                             );
                         }
+                    } else if is_note_op {
+                        // Blind note commit / absorb is permitted prior to DID registration
+                        // Recipient / relayer executes state change via embedded note gas
                     } else {
                         tracing::warn!(?sender, "Rejecting state change in pool: Account has no registered DID identity on Slot 0");
                         return TransactionValidationOutcome::Invalid(
@@ -457,7 +465,7 @@ where
         // ── Gate 1: Zero-gas tx validation ────────────────────────────────
         let gas_price = transaction.gas_price().unwrap_or_else(|| transaction.max_fee_per_gas());
         let is_system_operation = if let Some(recipient) = transaction.to() {
-            recipient == crate::system_registry::SYSTEM_RECEIVE_HOOK || recipient == crate::system_registry::SYSTEM_BRIDGE
+            recipient == crate::system_registry::SYSTEM_RECEIVE_HOOK || recipient == crate::system_registry::SYSTEM_BRIDGE || recipient == crate::system_registry::SYSTEM_NOTE_REGISTRY
         } else {
             false
         };
@@ -527,7 +535,8 @@ where
         }
 
         // ── Gate 4: Balance solvency check ────────────────────────────────
-        if !is_did_reg {
+        let is_note_absorb = transaction.to() == Some(crate::system_registry::SYSTEM_NOTE_REGISTRY) && transaction.input().starts_with(&[0x02]);
+        if !is_did_reg && !is_note_absorb {
             if let Ok(reg) = registry_lock.read() {
                 let initial_balance = self.client.get_balance(sender);
                 let lattice_balance = compute_lattice_balance(sender, &reg, initial_balance);
@@ -617,8 +626,14 @@ where
                 tracing::info!(?sender, ?err, "Inner transaction validation returned Invalid; evaluating lattice balance fallback");
                 if is_did_reg || is_sys_target {
                     let state_nonce = self.client.get_nonce(sender);
-                    if state_nonce != transaction.nonce() {
-                        tracing::warn!(?sender, ?state_nonce, tx_nonce = transaction.nonce(), "Rejecting invalid nonce for system transaction (replay prevention)");
+                    let frontier_seq = if let Ok(reg) = registry_lock.read() {
+                        reg.account_frontiers.get(&sender).map(|f| f.sequence).unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    let effective_nonce = state_nonce.max(frontier_seq);
+                    if state_nonce != transaction.nonce() && effective_nonce != transaction.nonce() {
+                        tracing::warn!(?sender, ?state_nonce, ?effective_nonce, tx_nonce = transaction.nonce(), "Rejecting invalid nonce for system transaction (replay prevention)");
                         return TransactionValidationOutcome::Invalid(
                             tx,
                             InvalidTransactionError::TxTypeNotSupported.into(),
@@ -632,9 +647,12 @@ where
                     };
                     let gas_price = tx.gas_price().unwrap_or_else(|| tx.max_fee_per_gas());
                     let needed = tx.value().saturating_add(alloy_primitives::U256::from(tx.gas_limit()).saturating_mul(alloy_primitives::U256::from(gas_price)));
-                    if gas_price == 0 || lattice_balance >= needed {
+                    let is_note_op = transaction.to() == Some(crate::system_registry::SYSTEM_NOTE_REGISTRY);
+                    let has_did = registry_lock.read().map(|reg| reg.has_registered_did(&sender)).unwrap_or(false);
+                    let is_sponsored_or_relayed = is_did_reg || (is_sys_target && has_did) || (is_note_op && (gas_price == 0 || tx.input().starts_with(&[0x02])));
+                    if gas_price == 0 || is_sponsored_or_relayed || lattice_balance >= needed {
                         TransactionValidationOutcome::Valid {
-                            balance: lattice_balance,
+                            balance: if is_sponsored_or_relayed && lattice_balance < needed { needed } else { lattice_balance },
                             state_nonce,
                             bytecode_hash: None,
                             transaction: reth_transaction_pool::validate::ValidTransaction::Valid(tx),
@@ -1078,6 +1096,9 @@ mod tests {
 
         // Validate PQ envelope transaction
         let res = validator.validate_transaction(TransactionOrigin::External, pq_tx).await;
+        if !matches!(res, TransactionValidationOutcome::Valid { .. }) {
+            eprintln!("PQ_TX VALIDATION FAILED: {:?}", res);
+        }
         assert!(matches!(res, TransactionValidationOutcome::Valid { .. }));
 
         // Clean up

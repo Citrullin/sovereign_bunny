@@ -74,8 +74,36 @@ impl RegisterPrecompileRouter {
             Some(Self::verify_rip7212_p256(input))
         } else if *target == PRECOMPILE_ADDRESS_SIGNAL {
             Some(Self::signal_interest(caller, input))
+        } else if *target == super::compliance::PRECOMPILE_ZK_COMPLIANCE {
+            Some(Self::verify_zk_compliance(input))
         } else {
             None
+        }
+    }
+
+    fn verify_zk_compliance(input: &[u8]) -> Result<Bytes, &'static str> {
+        if input.len() < 33 {
+            return Err("Input too short: requires circuit_id (1B) + expected_root (32B)");
+        }
+        let circuit_id_raw = input[0];
+        let circuit_id = super::compliance::ZkComplianceCircuitId::from_u8(circuit_id_raw)
+            .ok_or("Invalid compliance circuit_id")?;
+        let expected_root = B256::from_slice(&input[1..33]);
+        let proof_slice = if input.len() > 33 { &input[33..] } else { &[] };
+
+        // Construct ZkComplianceAction
+        let action = super::compliance::ZkComplianceAction {
+            circuit_id,
+            proof_bytes: Bytes::copy_from_slice(proof_slice),
+            public_inputs: Bytes::copy_from_slice(expected_root.as_slice()),
+            epoch_id: 42,
+            authority_account: Address::ZERO,
+        };
+
+        if action.verify_compliance(expected_root) {
+            Ok(Bytes::copy_from_slice(&[0x01; 32]))
+        } else {
+            Err("Compliance proof verification failed")
         }
     }
 
@@ -175,6 +203,19 @@ impl RegisterPrecompileRouter {
     }
 
     fn verify_rebac(input: &[u8], register: Option<&PolymorphicAccountRegister>) -> Result<Bytes, &'static str> {
+        // Mode 0x02 or ABI checkServiceAccess(address,string):
+        // [0x02 (1B) || user: Address (20B) || service_name: (remaining UTF-8 bytes)]
+        if !input.is_empty() && input[0] == 0x02 && input.len() > 21 {
+            let user = Address::from_slice(&input[1..21]);
+            if let Ok(service_name) = std::str::from_utf8(&input[21..]) {
+                if let Ok(reg) = crate::governance::registry::get_registry().read() {
+                    let has_access = reg.zanzibar_engine.check_oidc_service_access(service_name, user);
+                    return Ok(Bytes::copy_from_slice(&[if has_access { 0x01 } else { 0x00 }]));
+                }
+            }
+            return Ok(Bytes::copy_from_slice(&[0x00]));
+        }
+
         // Every account responds None / 0x00 when asked for permission rather than failing.
         let reg = match register {
             Some(r) => r,
@@ -192,12 +233,15 @@ impl RegisterPrecompileRouter {
         // If input contains structured binary tuple query (56 bytes):
         // [namespace_id (2B) || object (32B) || relation_id (2B) || subject (20B)]
         if input.len() >= 56 {
-            let _ns_id = u16::from_le_bytes([input[0], input[1]]);
-            let _obj = B256::from_slice(&input[2..34]);
-            let _rel_id = u16::from_le_bytes([input[34], input[35]]);
-            let _subject = Address::from_slice(&input[36..56]);
+            let ns_id = u16::from_le_bytes([input[0], input[1]]);
+            let obj = B256::from_slice(&input[2..34]);
+            let rel_id = u16::from_le_bytes([input[34], input[35]]);
+            let subject = Address::from_slice(&input[36..56]);
             
-            // Evaluated statelessly against Slot 1 ReBAC root
+            if let Ok(sys_reg) = crate::governance::registry::get_registry().read() {
+                let has_perm = sys_reg.zanzibar_engine.check(ns_id, obj, rel_id, subject, 10);
+                return Ok(Bytes::copy_from_slice(&[if has_perm { 0x01 } else { 0x00 }]));
+            }
             return Ok(Bytes::copy_from_slice(&[0x01]));
         }
 

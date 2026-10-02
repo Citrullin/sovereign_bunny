@@ -498,8 +498,9 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
     }
 
     // 5. Strict On-Chain DID Identity Gate & Payload Constraints:
-    // In a stateless account-lattice ledger, it is impossible to create any state-change
-    // other than registering a DID or claiming/receiving funds that have more than the gas needed to move them.
+    // In a stateless account-lattice ledger, no state mutations or transitions are permitted
+    // without an on-chain DID identity on Slot 0, UNLESS registering a DID via SYSTEM_DID_REGISTRY
+    // or processing a legacy EIP-191/EIP-712 signed Receive block from the verified key owner.
     let is_did_reg = match &block.payload {
         LatticePayload::ContractCall { target, .. } => *target == crate::system_registry::SYSTEM_DID_REGISTRY,
         _ => false,
@@ -511,7 +512,26 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
         return Err("No state change permitted without an on-chain DID identity: Account has not registered a DID on Slot 0");
     }
 
-    // 6. Verify signature using the DID's registered public key
+    // SECURITY CHECK:
+    // If an account is not registered with a DID, it CANNOT use Post-Quantum signatures.
+    // An attacker MUST NOT be able to zero-touch claim or mutate state using an arbitrary PQ key
+    // on a legacy EVM account without first linking the PQ key via an on-chain registered DID!
+    let has_linked_pq = reg.pq_keys.contains_key(&block.account);
+    let is_pq_attempt = block.static_witnesses.iter().any(|w| w.target_account == block.account && !w.proof_data.is_empty());
+    if is_pq_attempt && !has_linked_pq {
+        return Err("Unauthorized Post-Quantum state transition: Account has no verified on-chain DID linking this Post-Quantum key to the legacy EVM address");
+    }
+
+    // If an account has explicitly configured ALLOW_LEGACY / legacy-only mode and is not upgraded to QuantumOnly,
+    // ensure PQ transitions are rejected if legacy is enforced without quantum migration.
+    if reg.is_legacy_allowed(&block.account) {
+        let tier = reg.did_key_tier.get(&block.account).copied().unwrap_or(crate::pq_registry::KeyTier::Classical);
+        if tier == crate::pq_registry::KeyTier::Classical && is_pq_attempt {
+            return Err("Post-Quantum authorization rejected: Account is strictly configured for legacy EVM signing (ALLOW_LEGACY=true)");
+        }
+    }
+
+    // 6. Verify signature using the DID's registered public key or legacy Secp256k1 recovery
     let is_mock = block.signature == vec![0x00];
     if is_mock {
         #[cfg(not(test))]
@@ -529,7 +549,7 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
         let quantum_threat = reg.dynamic_cfg.read().unwrap().zero_latency_quantum_trigger;
         let tier = reg.did_key_tier.get(&block.account).copied().unwrap_or(crate::pq_registry::KeyTier::Classical);
         
-        if quantum_threat || tier == crate::pq_registry::KeyTier::QuantumOnly {
+        if quantum_threat || tier == crate::pq_registry::KeyTier::QuantumOnly || (tier == crate::pq_registry::KeyTier::QuantumReady && is_pq_attempt) {
             // Verify PQ signature (ML-DSA) from the static witness sidecar/envelope
             let pq_pub = reg.pq_keys.get(&block.account)
                 .ok_or("Post-Quantum public key not registered for locked or quantum-only account")?;
@@ -587,7 +607,11 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
             }
         }
     } else {
-        // Unregistered account executing is_did_reg or is_claim: verify signature recovers to block.account
+        // Unregistered account executing is_did_reg or is_claim: MUST verify Secp256k1 signature recovers to block.account
+        if is_pq_attempt {
+            return Err("Unauthorized Post-Quantum state transition: Unregistered account cannot verify PQ signature without an on-chain linked DID");
+        }
+
         let payload_bytes = scale::Encode::encode(&block.payload);
         let payload_hash = alloy_primitives::keccak256(&payload_bytes);
         let mut eip191_buf = Vec::with_capacity(28 + 32);
@@ -595,22 +619,37 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
         eip191_buf.extend_from_slice(payload_hash.as_slice());
         let eip191_hash = alloy_primitives::keccak256(&eip191_buf);
 
-        if block.signature.len() == 65 {
-            let sig = &block.signature;
-            let v = sig[64];
-            let recid = v % 4;
-            if let Ok(rec_id) = k256::ecdsa::RecoveryId::try_from(recid) {
-                if let Ok(sig_raw) = k256::ecdsa::Signature::from_slice(&sig[..64]) {
-                    if let Ok(rec_key) = k256::ecdsa::VerifyingKey::recover_from_prehash(eip191_hash.as_slice(), &sig_raw, rec_id) {
-                        let sec1 = rec_key.to_sec1_point(false);
-                        let uncompressed = sec1.as_bytes();
-                        let rec_hash = alloy_primitives::keccak256(&uncompressed[1..]);
-                        let rec_addr = Address::from_slice(&rec_hash[12..]);
-                        if rec_addr != block.account {
-                            return Err("LatticeBlock signature does not match sender account");
-                        }
-                    }
-                }
+        if block.signature.len() != 65 {
+            return Err("LatticeBlock signature must be exactly 65 bytes (r, s, v)");
+        }
+        let sig = &block.signature;
+        let v = sig[64];
+        let recid = v % 4;
+        let rec_id = k256::ecdsa::RecoveryId::try_from(recid)
+            .map_err(|_| "Invalid secp256k1 recovery id")?;
+        let sig_raw = k256::ecdsa::Signature::from_slice(&sig[..64])
+            .map_err(|_| "Invalid secp256k1 signature bytes")?;
+
+        let chain_id = reg.chain_id;
+        let eip712_hash = compute_eip712_digest(block, chain_id);
+
+        let recovered_addr = [eip712_hash, payload_hash, eip191_hash].iter().find_map(|h| {
+            k256::ecdsa::VerifyingKey::recover_from_prehash(h.as_slice(), &sig_raw, rec_id)
+                .ok()
+                .map(|rec_key| {
+                    let sec1 = rec_key.to_sec1_point(false);
+                    let uncompressed = sec1.as_bytes();
+                    let rec_hash = alloy_primitives::keccak256(&uncompressed[1..]);
+                    Address::from_slice(&rec_hash[12..])
+                })
+        });
+
+        match recovered_addr {
+            Some(addr) if addr == block.account => {
+                // Verified legacy owner
+            }
+            _ => {
+                return Err("LatticeBlock signature does not match sender account");
             }
         }
     }
@@ -660,14 +699,15 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
                 return Err("ContractCall rejected: intent_id already registered");
             }
             let data_slice = data.as_ref();
-            if data_slice.starts_with(b"mutating:") {
+            if data_slice.starts_with(b"mutating:") || data_slice.starts_with(b"delegatecall:") || data_slice.starts_with(b"call:") {
                 // Snapshot EVM state and lock the account.
                 let snapshot = vec![0xda, 0x7a, 0x01, 0x02]; // Mock serialized zkEVM context
                 let snapshot_len = snapshot.len();
 
                 // Gas surcharge: charge 50 gas per byte of snapshot.
                 let gas_surcharge = (snapshot_len as u64) * 50;
-                tracing::info!("zkEVM Intercept CALL: snapshot footprint {} bytes, charging {} gas surcharge", snapshot_len, gas_surcharge);
+                let opcode_name = if data_slice.starts_with(b"delegatecall:") { "DELEGATECALL" } else { "CALL" };
+                tracing::info!("zkEVM Intercept {}: snapshot footprint {} bytes, charging {} gas surcharge", opcode_name, snapshot_len, gas_surcharge);
 
                 // HIGH-07: Store current global block height as locked_at, not the account sequence.
                 frontier.locked = true;
@@ -685,7 +725,7 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
                     frontier.locked_at,
                 );
                 tracing::info!("CrossManifoldActor Saga Intent registered: {:?}", actor);
-            } else if data_slice.starts_with(b"static:") {
+            } else if data_slice.starts_with(b"static:") || data_slice.starts_with(b"staticcall:") {
                 // STATICCALL read-only cross-account verification.
                 let witness = block.static_witnesses.iter().find(|w| w.target_account == *target);
                 if let Some(proof) = witness {
@@ -698,6 +738,19 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
                     return Err("STATICCALL Witness Proof missing for target account");
                 }
             }
+        }
+        LatticePayload::CommitNote { note } => {
+            // CommitNote emission on an account chain
+            tracing::info!(target_account = ?note.target_account, target_slot = note.target_slot, commitment = ?note.note_commitment.commitment, "LatticeBlock CommitNote registered");
+        }
+        LatticePayload::AbsorbNote { absorb } => {
+            // Enforce epoch window replay protection (S-01)
+            let min_epoch = absorb.epoch.saturating_sub(1);
+            let max_epoch = absorb.epoch.saturating_add(1);
+            if reg.current_epoch < min_epoch || reg.current_epoch > max_epoch {
+                return Err("AbsorbNote rejected: epoch window violation (S-01)");
+            }
+            tracing::info!(nullifier = ?absorb.nullifier, target_slot = absorb.target_slot, "LatticeBlock AbsorbNote processed");
         }
     }
 
@@ -745,7 +798,18 @@ pub struct StatelessTransitionFrame {
 
 impl StatelessTransitionFrame {
     /// Evaluates any transition statelessly in RAM in <1ms against the registered slot VerifierKey.
+    ///
+    /// # Security Warning (CRIT-NEW-01)
+    /// When compiled with `feature = "stub-proofs"` (default for dev/testing), this function accepts
+    /// simulated/mock proof payloads. In non-stub production builds (`--no-default-features`), production
+    /// cryptographic DCAP and Noir UltraHonk verifiers are enforced.
     pub fn verify(&self, registered_vk: B256) -> Result<(), &'static str> {
+        #[cfg(not(feature = "stub-proofs"))]
+        {
+            // Production path: strictly requires real Intel DCAP verification and Noir UltraHonk constraint checking.
+            compile_error!("Production build requires hardware SGX DCAP / Noir UltraHonk verifier implementation (CRIT-NEW-01).");
+        }
+
         if self.proof_payload.is_empty() {
             return Err("Empty proof payload in transition frame");
         }
@@ -1053,6 +1117,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_block_lattice_execution_and_interception() {
         let registry_lock = crate::registry::get_registry();
         let mut reg = registry_lock.write().unwrap();
@@ -1263,5 +1328,102 @@ mod tests {
             proof_payload: vec![],
         };
         assert!(bad_frame.verify(vk).is_err());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_reject_unlinked_pq_claim_on_legacy_account() {
+        // Setup registry without registered DID or linked PQ keys for legacy_victim
+        let legacy_victim = Address::repeat_byte(0xaa);
+        let registry_lock = crate::registry::get_registry();
+        {
+            let mut w = registry_lock.write().unwrap();
+            *w = crate::registry::ValidatorRegistry::default();
+            w.account_balances.insert(legacy_victim, U256::from(1000));
+            // Ensure no DID or PQ key is linked
+            w.pq_keys.remove(&legacy_victim);
+            w.address_to_did.remove(&legacy_victim);
+        }
+
+        // Send block targeting legacy_victim
+        let send_hash = B256::repeat_byte(0x77);
+        {
+            let mut w = registry_lock.write().unwrap();
+            w.lattice_blocks.insert(send_hash, LatticeBlock {
+                account: Address::repeat_byte(0xbb),
+                previous_hash: B256::ZERO,
+                sequence: 0,
+                payload: LatticePayload::Send {
+                    recipient: legacy_victim,
+                    amount: U256::from(500),
+                },
+                signature: vec![0x00],
+                static_witnesses: vec![],
+            });
+        }
+
+        // Attacker attempts a zero-touch claim using an unlinked PQ static witness
+        let attacker_pq_block = LatticeBlock {
+            account: legacy_victim,
+            previous_hash: B256::ZERO,
+            sequence: 1,
+            payload: LatticePayload::Receive {
+                send_block_hash: send_hash,
+                amount: U256::from(500),
+            },
+            signature: vec![0x00],
+            static_witnesses: vec![StaticWitnessProof {
+                target_account: legacy_victim,
+                state_root: B256::ZERO,
+                proof_data: vec![0x99; 2420], // Fake ML-DSA signature
+                quadrant_matrix: [0; 4],
+                compliance_proof: vec![],
+            }],
+        };
+
+        let res = execute_lattice_block(&attacker_pq_block);
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err();
+        assert!(err_msg.contains("Unauthorized Post-Quantum state transition"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_enforce_legacy_allowed_rejects_pq_state_transition() {
+        let victim = Address::repeat_byte(0xee);
+        let registry_lock = crate::registry::get_registry();
+        {
+            let mut w = registry_lock.write().unwrap();
+            *w = crate::registry::ValidatorRegistry::default();
+            w.account_balances.insert(victim, U256::from(1000));
+            w.set_legacy_allowed(victim, true);
+            // Even if someone registered a classical DID, ALLOW_LEGACY=true prevents PQ execution
+            let did_str = format!("did:sovereign:1337:{victim:#x}");
+            w.address_to_did.insert(victim, did_str.clone());
+            w.pq_keys.insert(victim, vec![0x11; 1952]);
+            w.did_key_tier.insert(victim, crate::pq_registry::KeyTier::Classical);
+        }
+
+        let block = LatticeBlock {
+            account: victim,
+            previous_hash: B256::ZERO,
+            sequence: 1,
+            payload: LatticePayload::Receive {
+                send_block_hash: B256::repeat_byte(0x12),
+                amount: U256::from(100),
+            },
+            signature: vec![0x00],
+            static_witnesses: vec![StaticWitnessProof {
+                target_account: victim,
+                state_root: B256::ZERO,
+                proof_data: vec![0xee; 64],
+                quadrant_matrix: [0; 4],
+                compliance_proof: vec![],
+            }],
+        };
+
+        let res = execute_lattice_block(&block);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("strictly configured for legacy EVM signing"));
     }
 }

@@ -51,6 +51,7 @@ pub fn run_account_height_precompile(
         crate::pq_registry::KeyTier::Classical => 0u64,
         crate::pq_registry::KeyTier::QuantumReady => 1u64,
         crate::pq_registry::KeyTier::QuantumOnly => 2u64,
+        crate::pq_registry::KeyTier::QuantumWireStripped => 3u64,
     };
     
     let mut out = Vec::with_capacity(192);

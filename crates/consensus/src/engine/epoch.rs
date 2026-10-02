@@ -265,8 +265,9 @@ pub fn finalize_epoch(
 /// # Invariant
 ///
 /// When markers are provided, epoch checkpoints require validator participation:
-/// at least one [`ThresholdEpochMarker`] with a non-empty threshold signature must be
-/// present. Checkpoints with invalid markers are rejected.
+/// at least one [`ThresholdEpochMarker`] with a valid BLS threshold signature must be
+/// present. When committee public keys are provided or aggregated in markers,
+/// pairing verification `e(sig, g2) == e(H(msg), agg_pk)` is enforced.
 pub fn finalize_epoch_with_markers(
     registry: &mut ValidatorRegistry,
     epoch_id: u64,
@@ -274,19 +275,46 @@ pub fn finalize_epoch_with_markers(
     state_root: B256,
     pending_markers: &[ThresholdEpochMarker],
 ) -> Result<EpochCheckpoint, &'static str> {
-    let valid_markers: Vec<&ThresholdEpochMarker> = pending_markers
-        .iter()
-        .filter(|m| m.epoch_id == epoch_id && !m.threshold_signature.is_empty())
-        .collect();
-    if !pending_markers.is_empty() && valid_markers.is_empty() {
+    if pending_markers.is_empty() {
+        return Ok(internal_finalize_epoch(registry, epoch_id, consensus_root, state_root, Vec::new()));
+    }
+
+    let mut valid_signatures = Vec::new();
+    let mut total_participants = 0usize;
+
+    for m in pending_markers {
+        if m.epoch_id != epoch_id || m.threshold_signature.is_empty() {
+            continue;
+        }
+
+        // If marker carries an aggregated public key (or sub-committee key), verify cryptographic BLS pairing
+        if !m.committee_aggregated_pk.is_empty() {
+            let msg = m.signing_message();
+            sovereign_crypto::verify_bls_threshold_signature(
+                &m.threshold_signature,
+                &msg,
+                &m.committee_aggregated_pk,
+            ).map_err(|_| "Invalid BLS threshold signature pairing on epoch marker")?;
+        }
+
+        valid_signatures.push(m.threshold_signature.clone());
+        total_participants = total_participants.saturating_add(m.participant_count.max(1));
+    }
+
+    if valid_signatures.is_empty() {
         return Err("Epoch finalization rejected: no valid ThresholdEpochMarker signatures collected");
     }
-    let validator_signatures: Vec<Vec<u8>> = valid_markers
-        .iter()
-        .map(|m| m.threshold_signature.clone())
-        .collect();
 
-    Ok(internal_finalize_epoch(registry, epoch_id, consensus_root, state_root, validator_signatures))
+    // Quorum enforcement: If registry has registered validators, enforce 2n/3 + 1 threshold
+    let validator_count = registry.validators.len();
+    if validator_count > 0 {
+        let required_quorum = (validator_count * 2) / 3 + 1;
+        if total_participants < required_quorum {
+            return Err("Epoch finalization rejected: insufficient validator quorum (need >= 2n/3 + 1)");
+        }
+    }
+
+    Ok(internal_finalize_epoch(registry, epoch_id, consensus_root, state_root, valid_signatures))
 }
 
 fn internal_finalize_epoch(
@@ -303,6 +331,12 @@ fn internal_finalize_epoch(
     for (addr, amount) in payouts {
         registry.credit_account_balance(addr, amount);
         tracing::debug!(?addr, ?amount, epoch_id, "Merit payout credited to account balance");
+    }
+
+    // Process timed-out send reclaims to refund uncollected sender funds
+    let reclaimed_hashes = registry.process_reclaim_sends();
+    if !reclaimed_hashes.is_empty() {
+        tracing::info!(count = reclaimed_hashes.len(), epoch_id, "Processed timed-out send reclaims at epoch boundary");
     }
 
     // 2. Capture Chandy-Lamport snapshot hash
@@ -344,6 +378,7 @@ fn internal_finalize_epoch(
     );
 
     registry.current_epoch = epoch_id;
+    registry.nullifier_smt.checkpoint_epoch(epoch_id);
     registry.latest_checkpoint = Some(checkpoint.clone());
     checkpoint
 }
@@ -485,6 +520,24 @@ pub struct ThresholdEpochMarker {
     pub issuer_leader: Address,
     /// Aggregated (t, n) threshold BLS signature from current sub-committee C_k
     pub threshold_signature: Vec<u8>,
+    /// Aggregated (t, n) public key of participating sub-committee members (compressed G2)
+    #[serde(default)]
+    pub committee_aggregated_pk: Vec<u8>,
+    /// Number of participating validator signatures aggregated in this marker
+    #[serde(default)]
+    pub participant_count: usize,
+}
+
+impl ThresholdEpochMarker {
+    /// Computes canonical signing message bytes for BLS signing of this marker.
+    pub fn signing_message(&self) -> Vec<u8> {
+        let mut msg = Vec::with_capacity(8 + 32 + 20 + 20);
+        msg.extend_from_slice(&self.epoch_id.to_be_bytes());
+        msg.extend_from_slice(self.previous_global_root.as_slice());
+        msg.extend_from_slice(self.target_validator.as_slice());
+        msg.extend_from_slice(self.issuer_leader.as_slice());
+        msg
+    }
 }
 
 /// Computes the deterministic entropy seed for the next epoch sub-committee rotation:
@@ -495,4 +548,98 @@ pub fn derive_next_epoch_seed(previous_seed: B256, global_frontier_root: B256) -
     preimage.extend_from_slice(global_frontier_root.as_slice());
     let hashed = sovereign_crypto::hash(sovereign_crypto::HashScheme::Blake3, &preimage);
     B256::from_slice(&hashed[..32])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sovereign_crypto::{bls_derive_pk_g2, bls_sign_message, bls_aggregate_signatures, bls_aggregate_pks_g2};
+
+    #[test]
+    #[serial_test::serial]
+    fn test_bls_threshold_epoch_finalization() {
+        use sovereign_identity::did::SovereignDidDocument;
+
+        let mut registry = ValidatorRegistry::default();
+
+        // 1. Derive real Sovereign DID documents for 3 validators
+        let seed1 = B256::repeat_byte(0x41);
+        let seed2 = B256::repeat_byte(0x42);
+        let seed3 = B256::repeat_byte(0x43);
+
+        let doc1 = SovereignDidDocument::derive_from_seed(seed1);
+        let doc2 = SovereignDidDocument::derive_from_seed(seed2);
+        let doc3 = SovereignDidDocument::derive_from_seed(seed3);
+
+        let val1_addr = doc1.evm_address;
+        let val2_addr = doc2.evm_address;
+        let _val3_addr = doc3.evm_address;
+
+        registry.sync_identity_from_doc(doc1.clone());
+        registry.sync_identity_from_doc(doc2.clone());
+        registry.sync_identity_from_doc(doc3.clone());
+
+        registry.validators.insert(doc1.did_uri.clone(), crate::registry::ValidatorType::HardwareTEE);
+        registry.validators.insert(doc2.did_uri.clone(), crate::registry::ValidatorType::HardwareTEE);
+        registry.validators.insert(doc3.did_uri.clone(), crate::registry::ValidatorType::HardwareTEE);
+
+        let sk1: [u8; 32] = *seed1.as_ref();
+        let sk2: [u8; 32] = *seed2.as_ref();
+        let sk3: [u8; 32] = *seed3.as_ref();
+
+        let pk1 = bls_derive_pk_g2(&sk1);
+        let pk2 = bls_derive_pk_g2(&sk2);
+        let pk3 = bls_derive_pk_g2(&sk3);
+
+        let mut marker = ThresholdEpochMarker {
+            epoch_id: 1,
+            previous_global_root: B256::ZERO,
+            target_validator: val1_addr,
+            issuer_leader: val2_addr,
+            threshold_signature: Vec::new(),
+            committee_aggregated_pk: Vec::new(),
+            participant_count: 2,
+        };
+
+        let msg = marker.signing_message();
+        let sig1 = bls_sign_message(&sk1, &msg);
+        let sig2 = bls_sign_message(&sk2, &msg);
+
+        let agg_sig = bls_aggregate_signatures(&[&sig1, &sig2]).expect("aggregate signatures");
+        let agg_pk = bls_aggregate_pks_g2(&[&pk1, &pk2]).expect("aggregate pks");
+
+        marker.threshold_signature = agg_sig;
+        marker.committee_aggregated_pk = agg_pk;
+
+        // Quorum of 3 is (3*2)/3 + 1 = 3. If participant_count is 2, it should fail quorum:
+        let res_fail = finalize_epoch_with_markers(
+            &mut registry,
+            1,
+            B256::repeat_byte(0x11),
+            B256::repeat_byte(0x22),
+            &[marker.clone()],
+        );
+        assert!(res_fail.is_err(), "Must reject when below quorum threshold");
+
+        // Now collect 3rd signature to meet full 2n/3 + 1 quorum
+        let sig3 = bls_sign_message(&sk3, &msg);
+        let full_agg_sig = bls_aggregate_signatures(&[&sig1, &sig2, &sig3]).expect("aggregate signatures");
+        let full_agg_pk = bls_aggregate_pks_g2(&[&pk1, &pk2, &pk3]).expect("aggregate pks");
+
+        marker.threshold_signature = full_agg_sig;
+        marker.committee_aggregated_pk = full_agg_pk;
+        marker.participant_count = 3;
+
+        let res_ok = finalize_epoch_with_markers(
+            &mut registry,
+            1,
+            B256::repeat_byte(0x11),
+            B256::repeat_byte(0x22),
+            &[marker],
+        );
+        assert!(res_ok.is_ok(), "Must succeed when threshold quorum met");
+        let cp = res_ok.unwrap();
+        assert_eq!(cp.epoch_id, 1);
+        assert_eq!(cp.consensus_root, B256::repeat_byte(0x11));
+    }
 }

@@ -57,8 +57,18 @@ pub use governance::pq_registry;
 pub use governance::registry;
 pub use governance::system_registry;
 pub use governance::anti_sybil;
+pub use governance::pq_ingress;
+pub use governance::eidas;
+pub use governance::xroad;
+pub use governance::repo_actor;
+pub use governance::authority;
+pub use governance::zodiac;
 
 pub use lattice::range as lattice_range;
+pub use lattice::note;
+pub use lattice::nullifier_smt;
+pub use lattice::viewing_key;
+pub use lattice::relayer;
 
 pub use system_contracts::actuator;
 pub use system_contracts::ai_merit;
@@ -70,6 +80,7 @@ pub use system_contracts::shadow_contract;
 pub use mesh::bgp;
 pub use mesh::dataplane;
 pub use mesh::relay_mesh;
+pub use mesh::topology;
 
 pub use storage::archival;
 pub use storage::flat_state;

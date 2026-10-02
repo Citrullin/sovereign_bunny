@@ -120,6 +120,41 @@ pub struct ShadowBurnReceipt {
     pub burn_epoch: u64,
 }
 
+impl ShadowBurnReceipt {
+    /// Computes the deterministic leaf commitment hash of this burn receipt for Merkle root inclusion.
+    pub fn commitment_hash(&self) -> B256 {
+        let mut preimage = Vec::with_capacity(32 + 32 + 4 + 4 + 20 + 8);
+        preimage.extend_from_slice(self.receipt_id.as_slice());
+        preimage.extend_from_slice(self.nullifier.as_slice());
+        preimage.extend_from_slice(&self.source_chain_id.to_be_bytes());
+        preimage.extend_from_slice(&self.dest_chain_id.to_be_bytes());
+        preimage.extend_from_slice(self.beneficiary.as_slice());
+        preimage.extend_from_slice(&self.burn_epoch.to_be_bytes());
+        alloy_primitives::keccak256(&preimage)
+    }
+}
+
+/// Verifies a Merkle inclusion proof for a `ShadowBurnReceipt` against the destination cluster's state or checkpoint root.
+pub fn verify_burn_receipt_merkle_proof(
+    receipt: &ShadowBurnReceipt,
+    merkle_root: B256,
+    proof_siblings: &[B256],
+) -> bool {
+    let mut current = receipt.commitment_hash();
+    for sibling in proof_siblings {
+        let mut hasher_input = Vec::with_capacity(64);
+        if current <= *sibling {
+            hasher_input.extend_from_slice(current.as_slice());
+            hasher_input.extend_from_slice(sibling.as_slice());
+        } else {
+            hasher_input.extend_from_slice(sibling.as_slice());
+            hasher_input.extend_from_slice(current.as_slice());
+        }
+        current = alloy_primitives::keccak256(&hasher_input);
+    }
+    current == merkle_root
+}
+
 /// In-memory Reserve Shadow Contract Vault managing 1:1 wrapped reserves and destination shadow instances.
 #[derive(Debug, Clone, Default)]
 pub struct ShadowTokenVault {
@@ -399,6 +434,17 @@ impl ShadowTokenVault {
         proof: &ShadowBurnReceipt,
         epoch_height: u64,
     ) -> Result<(Address, ShadowAsset), &'static str> {
+        self.release_native_from_burn_proof_verified(proof, epoch_height, None)
+    }
+
+    /// Origin cluster verifies destination burn proof against an optional destination checkpoint/state root
+    /// via Merkle inclusion proof, nullifier validation, and releases native asset ownership to beneficiary.
+    pub fn release_native_from_burn_proof_verified(
+        &mut self,
+        proof: &ShadowBurnReceipt,
+        epoch_height: u64,
+        merkle_verification: Option<(B256, &[B256])>,
+    ) -> Result<(Address, ShadowAsset), &'static str> {
         let descriptor = self.shadow_tokens.get_mut(&proof.receipt_id).ok_or("Origin shadow token escrow not found")?;
 
         if descriptor.state == ShadowState::BurnedAndSettled {
@@ -411,6 +457,12 @@ impl ShadowTokenVault {
 
         if self.spent_nullifiers.contains_key(&proof.nullifier) {
             return Err("Nullifier already spent");
+        }
+
+        if let Some((root, siblings)) = merkle_verification {
+            if !verify_burn_receipt_merkle_proof(proof, root, siblings) {
+                return Err("Merkle inclusion proof verification failed for burn receipt");
+            }
         }
 
         descriptor.state = ShadowState::BurnedAndSettled;
@@ -546,5 +598,65 @@ mod tests {
             charlie,
             Some(&zanzibar),
         ).is_err());
+    }
+
+    #[test]
+    fn test_shadow_burn_merkle_proof_verification() {
+        let mut vault = ShadowTokenVault::new();
+        let mut registry = crate::governance::ValidatorRegistry::default();
+        let alice = Address::repeat_byte(0x01);
+        let bob = Address::repeat_byte(0x02);
+
+        registry.credit_account_balance(alice, U256::from(5000));
+        let shadow = vault.wrap_native_to_shadow(alice, 10, U256::from(2000), &mut registry).unwrap();
+        vault.mint_shadow_instance(&shadow, 1).unwrap();
+
+        let receipt = vault.initiate_shadow_burn(shadow.receipt_id, alice, bob, 10, 10).unwrap();
+
+        // Construct 2-level Merkle tree
+        let leaf = receipt.commitment_hash();
+        let sibling1 = B256::repeat_byte(0xaa);
+        let sibling2 = B256::repeat_byte(0xbb);
+
+        let hash_pair = |a: B256, b: B256| {
+            let mut input = Vec::new();
+            if a <= b {
+                input.extend_from_slice(a.as_slice());
+                input.extend_from_slice(b.as_slice());
+            } else {
+                input.extend_from_slice(b.as_slice());
+                input.extend_from_slice(a.as_slice());
+            }
+            alloy_primitives::keccak256(&input)
+        };
+
+        let parent = hash_pair(leaf, sibling1);
+        let root = hash_pair(parent, sibling2);
+
+        // 1. Valid Merkle proof succeeds release
+        let res_ok = vault.release_native_from_burn_proof_verified(
+            &receipt,
+            11,
+            Some((root, &[sibling1, sibling2])),
+        );
+        assert!(res_ok.is_ok());
+        let (beneficiary, asset) = res_ok.unwrap();
+        assert_eq!(beneficiary, bob);
+        assert_eq!(asset, ShadowAsset::Fungible { amount: U256::from(2000), asset_identifier: None });
+
+        // 2. Tampered root fails
+        let fake_root = B256::repeat_byte(0xee);
+        let mut second_vault = ShadowTokenVault::new();
+        registry.credit_account_balance(alice, U256::from(5000));
+        let shadow2 = second_vault.wrap_native_to_shadow(alice, 10, U256::from(1000), &mut registry).unwrap();
+        second_vault.mint_shadow_instance(&shadow2, 1).unwrap();
+        let receipt2 = second_vault.initiate_shadow_burn(shadow2.receipt_id, alice, bob, 10, 10).unwrap();
+
+        let res_fail = second_vault.release_native_from_burn_proof_verified(
+            &receipt2,
+            11,
+            Some((fake_root, &[sibling1, sibling2])),
+        );
+        assert!(res_fail.is_err());
     }
 }

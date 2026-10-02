@@ -45,6 +45,7 @@ fn test_precompile_router_saga_escrow() {
     let target = Address::repeat_byte(0x22);
     let intent_id = B256::repeat_byte(0x33);
     registry.address_to_did.insert(caller, "did:sovereign:1337:caller".to_string());
+    registry.credit_account_balance(caller, U256::from(1000));
 
     // WHEN: SagaEscrow system action is dispatched to SYSTEM_SAGA_ESCROW
     let action = SystemAction::SagaEscrow {
@@ -62,6 +63,8 @@ fn test_precompile_router_saga_escrow() {
     assert!(registry.actors.contains_key(&intent_id));
     let frontier = registry.account_frontiers.get(&caller).unwrap();
     assert!(frontier.locked);
+    // Solvency guarantee: caller balance is debited by the escrow amount
+    assert_eq!(registry.get_account_balance(&caller), U256::from(500));
 }
 
 #[test]
@@ -92,16 +95,43 @@ fn test_precompile_router_register_did() {
         }]
     }).to_string();
 
-    // WHEN: RegisterDid system action is dispatched to SYSTEM_DID_REGISTRY
+    // Negative test: fresh address with zero gas and zero notes MUST be rejected
     let action = SystemAction::RegisterDid {
-        did_document: did_doc_json,
+        did_document: did_doc_json.clone(),
         pq_pub_key: vec![0x01; 32],
         key_tier: "QuantumReady".to_string(),
     };
     let calldata = action.encode();
-    let res = execute_system_action(&mut registry, caller, SYSTEM_DID_REGISTRY, &calldata, 1);
+    let res_neg = execute_system_action(&mut registry, caller, SYSTEM_DID_REGISTRY, &calldata, 1);
+    assert!(res_neg.is_err(), "Zero-gas fresh address DID registration MUST fail");
+    assert_eq!(
+        res_neg.err().unwrap(),
+        "Insufficient economic credit: Fresh address requires an in-note gas allocation or settled balance to register DID"
+    );
 
-    // THEN: Registration succeeds and address maps to registered DID & PQ key
+    // WHEN: A sender commits a blind note to this fresh address with DID_REGISTRATION_GAS_FEE
+    let sender = Address::repeat_byte(0x99);
+    let reg_fee = sovereign_consensus::lattice::note::DID_REGISTRATION_GAS_FEE;
+    registry.account_balances.insert(sender, alloy_primitives::U256::from(reg_fee * 2));
+    let mut note_commit = sovereign_consensus::lattice::note::NoteCommitment::new(
+        alloy_primitives::B256::repeat_byte(0x77),
+        alloy_primitives::Bytes::new(),
+        alloy_primitives::Bytes::new(),
+        alloy_primitives::B256::repeat_byte(0x88),
+        1,
+        1,
+    );
+    note_commit.did_registration_fee = reg_fee;
+    let commit_action = SystemAction::CommitNote {
+        note_commitment: note_commit,
+        target_account: caller,
+        target_slot: 2,
+    };
+    let commit_res = execute_system_action(&mut registry, sender, sovereign_consensus::system_registry::SYSTEM_NOTE_REGISTRY, &commit_action.encode(), 1);
+    assert!(commit_res.is_ok(), "Note commitment funding registration gas must succeed");
+
+    // THEN: Registration now succeeds because recipient has in-note registration gas funded
+    let res = execute_system_action(&mut registry, caller, SYSTEM_DID_REGISTRY, &calldata, 1);
     assert!(res.is_ok(), "RegisterDid failed: {:?}", res.err());
     let expected_did = format!("did:sovereign:{}:{}", registry.chain_id, caller.to_string().to_lowercase());
     let registered_did = registry.address_to_did.get(&caller).cloned().unwrap_or_default();

@@ -757,7 +757,11 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_wave_executor_real_execution() {
+        if let Ok(mut r) = crate::registry::get_registry().write() {
+            *r = crate::registry::ValidatorRegistry::default();
+        }
         let executor = WaveExecutor::new();
         let mut db = WitnessDatabase::default();
         let sender = Address::repeat_byte(0xaa);
@@ -786,7 +790,11 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_pevm_executor_real_execution() {
+        if let Ok(mut r) = crate::registry::get_registry().write() {
+            *r = crate::registry::ValidatorRegistry::default();
+        }
         let executor = PevmExecutor::new();
         let mut db = WitnessDatabase::default();
         let sender = Address::repeat_byte(0xaa);
@@ -814,7 +822,11 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_grevm_executor_real_execution() {
+        if let Ok(mut r) = crate::registry::get_registry().write() {
+            *r = crate::registry::ValidatorRegistry::default();
+        }
         let executor = GrevmExecutor::new();
         let mut db = WitnessDatabase::default();
         let sender = Address::repeat_byte(0xaa);
@@ -842,6 +854,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_unclaimed_lattice_sends_cannot_be_spent() {
         let executor = WaveExecutor::new();
         let mut db = WitnessDatabase::default();
@@ -861,6 +874,9 @@ mod tests {
         });
 
         let reg = crate::registry::get_registry();
+        if let Ok(mut r) = reg.write() {
+            *r = crate::registry::ValidatorRegistry::default();
+        }
         let send_hash = alloy_primitives::B256::repeat_byte(0x01);
         if let Ok(mut r) = reg.write() {
             r.lattice_blocks.insert(send_hash, crate::stateless::LatticeBlock {
