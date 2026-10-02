@@ -1,0 +1,4 @@
+[submodule "contracts/lib/zodiac-modifier-roles"]
+	path = contracts/lib/zodiac-modifier-roles
+	url = https://github.com/gnosisguild/zodiac-modifier-roles.git
+	branch = contracts-v3
