@@ -110,6 +110,8 @@ pub fn decode_raw_tx_info(raw_hex: &str) -> (Option<Address>, Option<Address>, V
             LatticePayload::Send { recipient, amount } => (Some(*recipient), *amount),
             LatticePayload::Receive { amount, .. } => (Some(SYSTEM_RECEIVE_HOOK), *amount),
             LatticePayload::ContractCall { target, .. } => (Some(*target), U256::ZERO),
+            LatticePayload::CommitNote { note } => (Some(note.target_account), U256::ZERO),
+            LatticePayload::AbsorbNote { absorb } => (Some(absorb.target_account), U256::ZERO),
         };
         return (Some(block.account), to, bytes, tx_hash, Some(block.sequence), value, block.signature.clone());
     }
@@ -120,6 +122,8 @@ pub fn decode_raw_tx_info(raw_hex: &str) -> (Option<Address>, Option<Address>, V
             LatticePayload::Send { recipient, amount } => (Some(*recipient), *amount),
             LatticePayload::Receive { amount, .. } => (Some(SYSTEM_RECEIVE_HOOK), *amount),
             LatticePayload::ContractCall { target, .. } => (Some(*target), U256::ZERO),
+            LatticePayload::CommitNote { note } => (Some(note.target_account), U256::ZERO),
+            LatticePayload::AbsorbNote { absorb } => (Some(absorb.target_account), U256::ZERO),
         };
         return (Some(block.account), to, bytes, tx_hash, Some(block.sequence), value, block.signature.clone());
     }
@@ -677,13 +681,17 @@ fn process_single_rpc_request(req: &Value, producer: &IggyProducer) -> Value {
             } else if to_str.ends_with("0005") {
                 // SYSTEM_JURISDICTION -> "{}"
                 json!({ "jsonrpc": "2.0", "id": id, "result": "0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000027b7d000000000000000000000000000000000000000000000000000000000000" })
-            } else if to_str.ends_with("0060") || to_str.ends_with("0001") {
-                // PRECOMPILE_RESOLVE_SLOT (0x60) or ROUTER (0x01)
+            } else if to_str.ends_with("0060") || to_str.ends_with("0001") || to_str.ends_with("0061") || to_str.ends_with("61") {
+                // PRECOMPILE_RESOLVE_SLOT (0x60), ROUTER (0x01), or ZANZIBAR_REBAC (0x61)
                 let call_data = hex::decode(data_str.trim_start_matches("0x")).unwrap_or_default();
                 let caller = params.get(0).and_then(|p| p.get("from")).and_then(|f| f.as_str()).and_then(|s| s.parse::<Address>().ok()).unwrap_or_default();
                 let reg = get_registry().read().unwrap();
                 let caller_car = reg.account_registers.get(&caller);
-                let target_addr: Address = to_str.parse().unwrap_or(sovereign_consensus::system_contracts::PRECOMPILE_RESOLVE_SLOT);
+                let target_addr: Address = if to_str.ends_with("61") {
+                    sovereign_consensus::system_contracts::PRECOMPILE_VERIFY_REBAC
+                } else {
+                    to_str.parse().unwrap_or(sovereign_consensus::system_contracts::PRECOMPILE_RESOLVE_SLOT)
+                };
                 match sovereign_consensus::system_contracts::RegisterPrecompileRouter::dispatch(&target_addr, &caller, &call_data, caller_car) {
                     Some(Ok(bytes)) => json!({ "jsonrpc": "2.0", "id": id, "result": format!("0x{}", hex::encode(bytes)) }),
                     _ => json!({ "jsonrpc": "2.0", "id": id, "result": "0x0000000000000000000000000000000000000000000000000000000000000000" })
@@ -2182,6 +2190,159 @@ fn process_single_rpc_request(req: &Value, producer: &IggyProducer) -> Value {
                     "subject": format!("{:#x}", user_addr),
                     "relations_count": relations.len(),
                     "relations": relations
+                }
+            })
+        }
+        "bunny_inscribeTuple" => {
+            let ns_id = params.get(0).and_then(|p| p.as_u64()).or_else(|| {
+                params.get(0).and_then(|p| p.as_str()).and_then(|s| s.parse::<u64>().ok())
+            }).unwrap_or(1) as u16;
+
+            let obj_b256 = if let Some(v) = params.get(1) {
+                if let Some(s) = v.as_str() {
+                    let clean = s.trim_start_matches("0x").trim_start_matches("0X");
+                    if clean.len() <= 64 && clean.chars().all(|c| c.is_ascii_hexdigit()) {
+                        let mut bytes = [0u8; 32];
+                        if let Ok(decoded) = hex::decode(clean) {
+                            let start = 32usize.saturating_sub(decoded.len());
+                            bytes[start..].copy_from_slice(&decoded);
+                            B256::from(bytes)
+                        } else {
+                            B256::from_slice(blake3::hash(s.as_bytes()).as_bytes())
+                        }
+                    } else {
+                        B256::from_slice(blake3::hash(s.as_bytes()).as_bytes())
+                    }
+                } else if let Some(arr) = v.as_array() {
+                    let mut bytes = [0u8; 32];
+                    for (i, item) in arr.iter().enumerate().take(32) {
+                        if let Some(byte) = item.as_u64() {
+                            bytes[i] = byte as u8;
+                        }
+                    }
+                    B256::from(bytes)
+                } else {
+                    B256::ZERO
+                }
+            } else {
+                B256::ZERO
+            };
+
+            let rel_id = params.get(2).and_then(|p| p.as_u64()).or_else(|| {
+                params.get(2).and_then(|p| p.as_str()).and_then(|s| s.parse::<u64>().ok())
+            }).unwrap_or(1) as u16;
+
+            let subj_addr_str = params.get(3).and_then(|p| p.as_str()).unwrap_or("");
+            let subj_addr: Address = subj_addr_str.parse().unwrap_or_else(|_| {
+                let h = blake3::hash(subj_addr_str.as_bytes());
+                Address::from_slice(&h.as_bytes()[12..32])
+            });
+
+            let tuple = sovereign_consensus::governance::zanzibar::ZanzibarTuple {
+                namespace_id: ns_id,
+                object: obj_b256,
+                relation_id: rel_id,
+                subject: sovereign_consensus::governance::zanzibar::ZanzibarSubject::User(subj_addr),
+            };
+
+            let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+            let (rebac_root, epoch, tx_hash) = {
+                let mut reg = get_registry().write().unwrap();
+                reg.zanzibar_engine.add_tuple(tuple);
+                let root = reg.zanzibar_engine.compute_rebac_root();
+                let ep = reg.current_epoch.max(1);
+                let hash = format!("{:#x}", B256::from_slice(blake3::hash(format!("inscribe:{ns_id}:{obj_b256}:{rel_id}:{subj_addr}:{now_ms}").as_bytes()).as_bytes()));
+                (root, ep, hash)
+            };
+
+            get_tx_log().write().unwrap().insert(0, LatticeTxLogEntry {
+                hash: tx_hash.clone(),
+                r#type: "zanzibar".to_string(),
+                title: "Inscribed ReBAC Tuple (Precompile 0x61, Slot 1)".to_string(),
+                counterparty: format!("{:#x}", Address::repeat_byte(0x61)),
+                amount: format!("NS: 0x{:04x} | Rel: 0x{:04x}", ns_id, rel_id),
+                calldata: format!("0x{:04x}{}{:04x}{}", ns_id, hex::encode(obj_b256), rel_id, hex::encode(subj_addr)),
+                epoch,
+                timestamp: now_ms,
+                status: "Settled".to_string(),
+                account: format!("{:#x}", subj_addr),
+            });
+
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "status": "inscribed",
+                    "slot": 1,
+                    "precompile": "0x61",
+                    "tx_hash": tx_hash,
+                    "namespace_id": ns_id,
+                    "object_id": format!("{:#x}", obj_b256),
+                    "relation_id": rel_id,
+                    "subject": format!("{:#x}", subj_addr),
+                    "rebac_root": format!("{:#x}", rebac_root)
+                }
+            })
+        }
+        "bunny_zanzibarCheck" => {
+            let ns_id = params.get(0).and_then(|p| p.as_u64()).or_else(|| {
+                params.get(0).and_then(|p| p.as_str()).and_then(|s| s.parse::<u64>().ok())
+            }).unwrap_or(1) as u16;
+
+            let obj_b256 = if let Some(v) = params.get(1) {
+                if let Some(s) = v.as_str() {
+                    let clean = s.trim_start_matches("0x").trim_start_matches("0X");
+                    if clean.len() <= 64 && clean.chars().all(|c| c.is_ascii_hexdigit()) {
+                        let mut bytes = [0u8; 32];
+                        if let Ok(decoded) = hex::decode(clean) {
+                            let start = 32usize.saturating_sub(decoded.len());
+                            bytes[start..].copy_from_slice(&decoded);
+                            B256::from(bytes)
+                        } else {
+                            B256::from_slice(blake3::hash(s.as_bytes()).as_bytes())
+                        }
+                    } else {
+                        B256::from_slice(blake3::hash(s.as_bytes()).as_bytes())
+                    }
+                } else if let Some(arr) = v.as_array() {
+                    let mut bytes = [0u8; 32];
+                    for (i, item) in arr.iter().enumerate().take(32) {
+                        if let Some(byte) = item.as_u64() {
+                            bytes[i] = byte as u8;
+                        }
+                    }
+                    B256::from(bytes)
+                } else {
+                    B256::ZERO
+                }
+            } else {
+                B256::ZERO
+            };
+
+            let rel_id = params.get(2).and_then(|p| p.as_u64()).or_else(|| {
+                params.get(2).and_then(|p| p.as_str()).and_then(|s| s.parse::<u64>().ok())
+            }).unwrap_or(1) as u16;
+
+            let subj_addr_str = params.get(3).and_then(|p| p.as_str()).unwrap_or("");
+            let subj_addr: Address = subj_addr_str.parse().unwrap_or_else(|_| {
+                let h = blake3::hash(subj_addr_str.as_bytes());
+                Address::from_slice(&h.as_bytes()[12..32])
+            });
+
+            let reg = get_registry().read().unwrap();
+            let is_authorized = reg.zanzibar_engine.check(ns_id, obj_b256, rel_id, subj_addr, 10);
+            let rebac_root = reg.zanzibar_engine.compute_rebac_root();
+
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "authorized": is_authorized,
+                    "namespace_id": ns_id,
+                    "object_id": format!("{:#x}", obj_b256),
+                    "relation_id": rel_id,
+                    "subject": format!("{:#x}", subj_addr),
+                    "rebac_root": format!("{:#x}", rebac_root)
                 }
             })
         }

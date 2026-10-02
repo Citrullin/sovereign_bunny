@@ -355,6 +355,12 @@ mod tests {
         assert_ne!(topic, B256::ZERO);
 
         // Test Legacy Raw Bytecall Execution (e.g. Register DID at 0x03)
+        // Seed user balance to satisfy anti-DDoS DID registration gas fee invariant
+        {
+            let mut reg = node.registry.write().unwrap();
+            reg.account_balances.insert(user_addr, alloy_primitives::U256::from(1_000_000_000_000_000_000u64));
+        }
+
         let reg_action = SystemAction::RegisterDid {
             did_document: node.identity.to_w3c_json_ld().to_string(),
             pq_pub_key: vec![0x99; 32],

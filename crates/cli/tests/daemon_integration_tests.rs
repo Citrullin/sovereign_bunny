@@ -13,6 +13,11 @@ use bunny_cli::daemons::{
 #[tokio::test]
 async fn test_real_gateway_daemon_json_rpc() {
     let port = 28545;
+    {
+        let mut reg = sovereign_consensus::governance::registry::get_registry().write().unwrap();
+        let addr = alloy_primitives::Address::repeat_byte(0x91);
+        reg.address_to_did.insert(addr, format!("did:sovereign:13371337:{addr:#x}"));
+    }
     tokio::spawn(async move {
         let _ = run_gateway_daemon(port, 65001).await;
     });
@@ -613,6 +618,17 @@ async fn test_continuous_rotating_paxos_epochs() {
 #[tokio::test]
 async fn test_genesis_allocations_and_real_account_history() {
     let port = 28558;
+    {
+        let mut reg = sovereign_consensus::governance::registry::get_registry().write().unwrap();
+        let path = if std::path::Path::new("genesis.json").exists() {
+            "genesis.json"
+        } else if std::path::Path::new("../../genesis.json").exists() {
+            "../../genesis.json"
+        } else {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../genesis.json")
+        };
+        reg.load_genesis_allocations(Some(path));
+    }
     tokio::spawn(async move {
         let _ = run_gateway_daemon(port, 65001).await;
     });

@@ -82,7 +82,7 @@ pub enum DescribeCommands {
     },
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum DidSubcommands {
     /// Generate a multi-key did:peer:4 DID document from seed or seedphrase
     Generate {
@@ -119,7 +119,7 @@ pub enum DidSubcommands {
     },
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum ConfigSubcommands {
     /// Set active cluster context (e.g. localhost, k8s-dev, production-mesh)
     UseContext {
@@ -144,8 +144,8 @@ pub struct LogsArgs {
     /// Format logs as OpenTelemetry JSON trace spans
     #[arg(long, default_value_t = false)]
     pub otel: bool,
-    /// Number of lines to show
-    #[arg(short = 'n', long, default_value_t = 20)]
+    /// Number of lines to show / tail
+    #[arg(short = 't', long = "tail", default_value_t = 20)]
     pub lines: usize,
 }
 
@@ -189,11 +189,11 @@ pub struct ShardSummary {
 
 impl CtlCommands {
     /// Execute the requested `ctl` command.
-    pub async fn run(&self) -> eyre::Result<()> {
+    pub async fn run(&self, cli: &crate::Cli) -> eyre::Result<()> {
         match self {
             CtlCommands::Get { resource } => match resource {
-                GetResourceCommands::Nodes => Self::get_nodes(),
-                GetResourceCommands::Pods => Self::get_pods(),
+                GetResourceCommands::Nodes => Self::get_nodes(cli),
+                GetResourceCommands::Pods => Self::get_pods(cli),
                 GetResourceCommands::Vms => Self::get_vms(),
                 GetResourceCommands::Shards => Self::get_shards(),
                 GetResourceCommands::Acl { object } => Self::get_acl(object.as_deref()),
@@ -219,46 +219,81 @@ impl CtlCommands {
                     Ok(())
                 }
                 ConfigSubcommands::View => {
-                    println!("CURRENT CONTEXT: localhost-dev");
+                    println!("CURRENT CONTEXT: {}", cli.context.as_deref().unwrap_or("k8s-cluster"));
+                    println!("NAMESPACE:       {}", cli.namespace);
                     println!("CLUSTERS:");
-                    println!("  - localhost-dev: http://localhost:8545 (Active)");
-                    println!("  - k8s-cluster:   https://sovereign-bunny.k3s.local:8545");
+                    println!("  - localhost-dev: http://localhost:8545");
+                    println!("  - k8s-cluster:   https://127.0.0.1:6443 (Active)");
                     println!("  - mesh-prod:     https://gateway.manifold.mesh:8545");
                     Ok(())
                 }
             },
-            CtlCommands::Logs(args) => Self::show_logs(args),
+            CtlCommands::Logs(args) => Self::show_logs(args, cli),
         }
     }
 
-    fn get_nodes() -> eyre::Result<()> {
+    pub fn get_nodes(cli: &crate::Cli) -> eyre::Result<()> {
+        let is_k8s = cli.context.as_deref() != Some("localhost");
+        if is_k8s {
+            let backend = crate::k8s_backend::ClusterBackendOps::new(&cli.namespace, cli.kubeconfig.clone());
+            if let Ok(nodes) = backend.list_nodes() {
+                if !nodes.is_empty() {
+                    println!("{:<16} {:<28} {:<18} {:<16} {:<24} {}", "NAME", "STATUS", "ROLES", "INTERNAL-IP", "OS-IMAGE", "ENCLAVE-MODE");
+                    for n in nodes {
+                        println!("{:<16} {:<28} {:<18} {:<16} {:<24} {}", n.name, n.status, n.roles, n.internal_ip, n.os_image, n.enclave_mode);
+                    }
+                    return Ok(());
+                }
+            }
+        }
+
         let nodes = vec![
             NodeSummary {
                 name: "bunny-node-01".to_string(),
-                status: "Ready (Enclave Verified)".to_string(),
+                status: "Ready (Simulated/Dev Mode)".to_string(),
                 roles: "validator,committee-leader".to_string(),
                 wireguard_ip: "10.0.0.1/24".to_string(),
                 bgp_asn: 65001,
-                attestation: "SGX-DCAP:OK (MRENCLAVE 0x4a9b...)".to_string(),
+                attestation: "MOCK_DEV:OK (Simulated Enclave / No Hardware SGXv2)".to_string(),
             },
             NodeSummary {
                 name: "bunny-node-02".to_string(),
-                status: "Ready".to_string(),
+                status: "Ready (Simulated/Dev Mode)".to_string(),
                 roles: "validator,storage-anchor".to_string(),
                 wireguard_ip: "10.0.0.2/24".to_string(),
                 bgp_asn: 65002,
-                attestation: "TDX:OK (MRTD 0x88fc...)".to_string(),
+                attestation: "MOCK_DEV:OK (Simulated Enclave / No Hardware SGXv2)".to_string(),
             },
         ];
 
-        println!("{:<16} {:<26} {:<26} {:<15} {:<8} {}", "NAME", "STATUS", "ROLES", "WIREGUARD-IP", "BGP-ASN", "ATTESTATION");
+        println!("{:<16} {:<28} {:<26} {:<15} {:<8} {}", "NAME", "STATUS", "ROLES", "WIREGUARD-IP", "BGP-ASN", "ATTESTATION");
         for n in nodes {
-            println!("{:<16} {:<26} {:<26} {:<15} {:<8} {}", n.name, n.status, n.roles, n.wireguard_ip, n.bgp_asn, n.attestation);
+            println!("{:<16} {:<28} {:<26} {:<15} {:<8} {}", n.name, n.status, n.roles, n.wireguard_ip, n.bgp_asn, n.attestation);
         }
         Ok(())
     }
 
-    fn get_pods() -> eyre::Result<()> {
+    pub fn get_pods(cli: &crate::Cli) -> eyre::Result<()> {
+        let is_k8s = cli.context.as_deref() != Some("localhost");
+        if is_k8s {
+            let backend = crate::k8s_backend::ClusterBackendOps::new(&cli.namespace, cli.kubeconfig.clone());
+            if let Ok(pods) = backend.list_pods() {
+                if !pods.is_empty() {
+                    println!("{:<24} {:<8} {:<12} {:<10} {:<16} {}", "NAME", "READY", "STATUS", "RESTARTS", "IP", "NODE");
+                    for p in pods {
+                        println!("{:<24} {:<8} {:<12} {:<10} {:<16} {}", p.name, p.ready, p.status, p.restarts, p.ip, p.node);
+                    }
+                    return Ok(());
+                }
+            }
+        }
+
+        Self::print_local_pods();
+        Ok(())
+    }
+
+    /// Prints local simulated daemon telemetry.
+    pub fn print_local_pods() {
         let pods = vec![
             PodSummary { name: "gateway-proxy".to_string(), ready: "1/1".to_string(), status: "Running".to_string(), restarts: 0, port: 8545, shard_range: "all".to_string() },
             PodSummary { name: "committee-0".to_string(), ready: "1/1".to_string(), status: "Running".to_string(), restarts: 0, port: 8546, shard_range: "0x0000..0x3FFF".to_string() },
@@ -270,12 +305,11 @@ impl CtlCommands {
         for p in pods {
             println!("{:<20} {:<8} {:<12} {:<10} {:<8} {}", p.name, p.ready, p.status, p.restarts, p.port, p.shard_range);
         }
-        Ok(())
     }
 
-    fn get_vms() -> eyre::Result<()> {
+    pub fn get_vms() -> eyre::Result<()> {
         let vms = vec![
-            VmSummary { name: "revm-secure-enclave".to_string(), vm_type: "EVM (Pectra/Cancun)".to_string(), isolation: "Hardware SGX DCAP".to_string(), active_instances: 4, gas_limit: "30,000,000".to_string() },
+            VmSummary { name: "revm-secure-enclave".to_string(), vm_type: "EVM (Pectra/Cancun)".to_string(), isolation: "Simulated DCAP / Software Enclave".to_string(), active_instances: 4, gas_limit: "30,000,000".to_string() },
             VmSummary { name: "solana-svm-actor".to_string(), vm_type: "SVM (BPF Sealevel)".to_string(), isolation: "eBPF Sandboxed".to_string(), active_instances: 2, gas_limit: "1,400,000 CUs".to_string() },
             VmSummary { name: "move-vm-core".to_string(), vm_type: "Move (Resource Types)".to_string(), isolation: "Bytecode Verifier".to_string(), active_instances: 1, gas_limit: "10,000,000 Units".to_string() },
             VmSummary { name: "noir-zk-verifier".to_string(), vm_type: "UltraHonk / Groth16".to_string(), isolation: "Stateless RAM Verifier".to_string(), active_instances: 8, gas_limit: "100µs In-Memory".to_string() },
@@ -288,7 +322,7 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn get_shards() -> eyre::Result<()> {
+    pub fn get_shards() -> eyre::Result<()> {
         let shards = vec![
             ShardSummary { shard_id: "shard-00".to_string(), prefix_range: "0x0000..0x3FFF".to_string(), leader: "bunny-node-01".to_string(), status: "Rotating Paxos Active".to_string(), pending_txs: 142 },
             ShardSummary { shard_id: "shard-01".to_string(), prefix_range: "0x4000..0x7FFF".to_string(), leader: "bunny-node-02".to_string(), status: "Rotating Paxos Active".to_string(), pending_txs: 89 },
@@ -303,7 +337,7 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn get_acl(filter_object: Option<&str>) -> eyre::Result<()> {
+    pub fn get_acl(filter_object: Option<&str>) -> eyre::Result<()> {
         use sovereign_consensus::governance::zanzibar::{derive_namespace_id, derive_relation_id};
         let mut engine = ZanzibarGraphEngine::new();
         let doc_id = B256::repeat_byte(0x42);
@@ -346,7 +380,7 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn get_compliance(_address_filter: Option<&str>) -> eyre::Result<()> {
+    pub fn get_compliance(_address_filter: Option<&str>) -> eyre::Result<()> {
         let user = Address::repeat_byte(0x05);
         let user_sanctions = B256::repeat_byte(0x11);
         let val_sanctions = B256::repeat_byte(0x22);
@@ -366,7 +400,7 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn get_metrics() -> eyre::Result<()> {
+    pub fn get_metrics() -> eyre::Result<()> {
         println!("# HELP bunny_tps_total Total processed state transitions");
         println!("# TYPE bunny_tps_total counter");
         println!("bunny_tps_total{{cluster=\"localhost-dev\"}} 284910");
@@ -385,11 +419,12 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn describe_cluster(name: &str, is_json: bool) -> eyre::Result<()> {
+    pub fn describe_cluster(name: &str, is_json: bool) -> eyre::Result<()> {
         if is_json {
             let desc = serde_json::json!({
                 "cluster_name": name,
                 "environment": "localhost-dev",
+                "attestation_mode": "Simulated / Software Enclave (No Hardware SGXv2 on Hetzner Host)",
                 "consensus": "Rotating Paxos over Snowman Linked Roots",
                 "stateless_lattice": true,
                 "active_shards": 4,
@@ -403,6 +438,7 @@ impl CtlCommands {
         } else {
             println!("=== Sovereign Bunny Cluster: {} ===", name);
             println!("  Environment:        localhost-dev (K3s / Local Multi-Process Mesh)");
+            println!("  Attestation Mode:   Simulated / Software Enclave (No Hardware SGXv2 on Hetzner Host)");
             println!("  Consensus Engine:   Rotating Paxos over Snowman Linked Roots");
             println!("  State Architecture: Microkernel Polymorphic Chained Account-Registers (CAR)");
             println!("  Cold Storage Slots: Slot 0 (DID Document), Slot 1 (Zanzibar ReBAC)");
@@ -415,7 +451,7 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn did_generate(seed_opt: Option<&str>, seedphrase_opt: Option<&str>) -> eyre::Result<()> {
+    pub fn did_generate(seed_opt: Option<&str>, seedphrase_opt: Option<&str>) -> eyre::Result<()> {
         let seed_bytes = if let Some(hex_seed) = seed_opt {
             let clean = hex_seed.trim_start_matches("0x");
             hex::decode(clean)?
@@ -434,7 +470,7 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn did_ssz(payload: &str) -> eyre::Result<()> {
+    pub fn did_ssz(payload: &str) -> eyre::Result<()> {
         let raw = hex::decode(payload.trim_start_matches("0x"))?;
         let mut envelope = Vec::with_capacity(raw.len() + 4);
         envelope.extend_from_slice(b"BNY\x01");
@@ -445,7 +481,7 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn did_caip(caip_id: &str) -> eyre::Result<()> {
+    pub fn did_caip(caip_id: &str) -> eyre::Result<()> {
         let parts: Vec<&str> = caip_id.split(':').collect();
         if parts.len() < 2 {
             println!("Invalid CAIP identifier: {}", caip_id);
@@ -461,7 +497,7 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn did_ticket(sender: &str, recipient: &str, amount: u64) -> eyre::Result<()> {
+    pub fn did_ticket(sender: &str, recipient: &str, amount: u64) -> eyre::Result<()> {
         let ticket_id = blake3::hash([sender.as_bytes(), recipient.as_bytes(), &amount.to_le_bytes()].concat().as_slice());
         println!("=== Cross-Chain Transfer Ticket Created ===");
         println!("Ticket ID:      0x{}", ticket_id.to_hex());
@@ -472,7 +508,16 @@ impl CtlCommands {
         Ok(())
     }
 
-    fn show_logs(args: &LogsArgs) -> eyre::Result<()> {
+    pub fn show_logs(args: &LogsArgs, cli: &crate::Cli) -> eyre::Result<()> {
+        let is_k8s = cli.context.as_deref() != Some("localhost");
+        if is_k8s {
+            let backend = crate::k8s_backend::ClusterBackendOps::new(&cli.namespace, cli.kubeconfig.clone());
+            if let Ok(logs) = backend.get_logs(&args.daemon, args.lines) {
+                print!("{}", logs);
+                return Ok(());
+            }
+        }
+
         if args.otel {
             let trace = serde_json::json!({
                 "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
@@ -503,8 +548,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_ctl_get_resources() {
-        assert!(CtlCommands::get_nodes().is_ok());
-        assert!(CtlCommands::get_pods().is_ok());
+        let dummy_cli = crate::Cli {
+            context: Some("localhost".to_string()),
+            namespace: "bunny-cluster".to_string(),
+            rpc_url: None,
+            kubeconfig: None,
+            command: crate::Commands::Ctl {
+                sub: CtlCommands::Get { resource: GetResourceCommands::Nodes },
+            },
+        };
+        assert!(CtlCommands::get_nodes(&dummy_cli).is_ok());
+        assert!(CtlCommands::get_pods(&dummy_cli).is_ok());
         assert!(CtlCommands::get_vms().is_ok());
         assert!(CtlCommands::get_shards().is_ok());
         assert!(CtlCommands::get_acl(None).is_ok());
