@@ -19,6 +19,7 @@
 - [Jurisdiction & Compliance](architecture/jurisdiction.md)
 - [SMT State Model](architecture/smt-state.md)
 - [Superposition State](architecture/superposition.md)
+- [Blind Note Transport & Privacy](architecture/blind-note-transport.md)
 - [Daemon API & ABI](architecture/daemon-abi.md)
 
 ---

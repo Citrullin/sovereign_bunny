@@ -41,7 +41,45 @@ Validators do not store historical transaction bodies or contract storage tries.
 
 ---
 
-## 3. Byzantine Chandy-Lamport: Pure Sovereign Clockless Finality
+## 3. Content Addressable Register (CAR) 64-Slot Space
+
+Every account in the Account-Lattice maintains state as a **Content Addressable Register (CAR)** with 64 polymorphic slots (`crates/consensus/src/lattice/car_register.rs`):
+
+```rust
+pub struct CarRegister {
+    pub account: Address,
+    pub slots: [B256; 64],
+    pub sequence: u64,
+    pub last_updated_epoch: u64,
+    pub is_locked: bool,
+    pub mounted_apps: Vec<MountedApp>,
+}
+```
+
+### 3.1 Canonical System Slots
+
+| Slot Index | System Role | Content / Commitment Type | Description |
+|:---:|:---|:---|:---|
+| **Slot 0** | `core.did_identity` | W3C DID Root (`B256`) | Controller address, PQ verification keys (ML-DSA, Falcon). |
+| **Slot 1** | `core.zanzibar` | Zanzibar ReBAC SMT Root (`B256`) | In-memory relation tuples (`owner`, `can_view`, `depends_on`). |
+| **Slot 2** | `core.native_payment` | Note Balance / Gas (`B256`) | Blind note unspent balance, gas credits, validator subsidy. |
+| **Slot 3** | `vcs.git_dag` | Git HEAD OID (`B256`) | Immutable tip of repository commits for decentralized Git. |
+| **Slot 4** | `ext.sqldigest` | Schema / Table Poseidon Digest (`B256`) | Relational database schema verification. |
+| **Slot 5** | `authority.xroad` | X-Road Descriptor (`B256`) | Regulatory trust anchor, X.509 cert hash, court order gateway. |
+| **Slot 6** | `vcs.interface_contract` | Interface Delta Accumulator (`B256`) | API/ABI breaking change detection. |
+| **Slot 7** | `reputation.merit` | Soulbound Merit Vector (`B256`) | Non-transferable merit rank for Snowball consensus sampling. |
+| **Slots 8–63** | `dynamic.user` | Custom DataRef or Bytecode | Domain applications, Zodiac DAO Safe modules, cold storage leases. |
+
+### 3.2 Hierarchical Addressing & Dynamic Mounts
+Accounts can derive deterministic hierarchical sub-accounts and named slot addresses without global contract deployment:
+- $\text{ChildAddress} = \text{Blake3}(\text{ParentAddress} \parallel \text{ChildIndex})$
+- $\text{NamedSlotAddress} = \text{Blake3}(\text{ParentAddress} \parallel \text{"slot:"} \parallel \text{SlotName})$
+
+Unused slots can be unmounted and paged to decentralized cold storage (Iroh/Bao BLAKE3 verified chunks) and dynamically rehydrated via `DataRef` read tickets.
+
+---
+
+## 4. Byzantine Chandy-Lamport: Pure Sovereign Clockless Finality
 
 Sovereign Reth does **not** rely on external L1 clocks, beacon slots, or synchronized node wall clocks. In a pure asynchronous Account-Lattice, **the round-trip traversal of threshold-signed marker messages is the clock**.
 
@@ -82,7 +120,7 @@ Sovereign Reth does **not** rely on external L1 clocks, beacon slots, or synchro
 
 ---
 
-## 4. Key Cryptographic Invariants
+## 5. Key Cryptographic Invariants
 
 ### 1. Targeted Addressing & Threshold Verification (Anti-DoS)
 A rogue node cannot fabricate fake markers or cause split-brain freezes:
@@ -103,7 +141,7 @@ If an assigned sub-committee stalls or goes offline during an epoch cut:
 
 ---
 
-## 5. Summary: Classical vs. Sovereign Byzantine Chandy-Lamport
+## 6. Summary: Classical vs. Sovereign Byzantine Chandy-Lamport
 
 | Dimension | Classical Chandy-Lamport (1985) | Sovereign Byzantine Chandy-Lamport |
 |---|---|---|

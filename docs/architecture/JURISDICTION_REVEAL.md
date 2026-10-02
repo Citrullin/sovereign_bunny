@@ -68,3 +68,37 @@ For zero-trust clients:
 When a jurisdiction updates its enforcement list (`ComplianceDelta`), added addresses enter a mandatory `ComplianceDeltaHold` state:
 - The delta is frozen until the subsequent epoch boundary ($E_{N+1}$) Chandy-Lamport snapshot.
 - Transactions from newly added addresses are held, preventing malicious front-running before the new SMT root is globally finalized.
+
+---
+
+## 5. Zanzibar ReBAC Viewing Key Governance & Auditability
+
+To reconcile sovereign individual privacy with regulatory and institutional audit compliance, Sovereign Reth decouples **Spending Capability** from **Viewing Capability** using Ephemeral Viewing Keys governed by Zanzibar ReBAC tuples (`crates/consensus/src/lattice/viewing_key.rs`):
+
+```
+                   [ CAR Register: Slot 1 Zanzibar SMT ]
+                                     │
+           ┌─────────────────────────┴─────────────────────────┐
+           ▼                                                   ▼
+[ Tuple: #can_view ]                              [ Tuple: #court_order_override ]
+• Delegated Auditor / Tax authority               • X-Road Authority / Court Order
+• Read-Only ephemeral viewing key                 • Threshold DAO / Multivendor reveal
+• ZERO spending capability (sk_spend safe)        • Time-bounded jurisdictional audit
+```
+
+### 5.1 Decoupled Cryptographic Capabilities
+- **Spending Key ($\text{sk}_{\text{spend}}$)**: Stays strictly within the user's isolated hardware enclave / browser storage (`accounts/<address>/`). Required to derive spend nullifiers and absorb notes.
+- **Viewing Key ($v_{\text{recv}}$)**: Derived from the recipient's secret scalar. Allows decrypting encrypted note payloads and calculating 1-byte view-tags without enabling balance mutation or note spending.
+
+### 5.2 Zanzibar Relationship-Based Access Control (CAR Slot 1)
+Relationships are declared as canonical ReBAC tuples evaluated in sub-microsecond in-memory passes:
+```text
+account:0xAlice#owner@user:0xAlice
+account:0xAlice#can_view@user:0xAuditorBob
+account:0xAlice#court_order_override@authority:0xAuthorityEstFinma
+```
+
+1. **Selective Auditor Disclosure**: Alice can share an ephemeral viewing key with an auditor by inserting a `#can_view` tuple into CAR Slot 1.
+2. **Authority Court Order Escalation**: Regulatory trust anchors registered in CAR Slot 5 (`XRoadDescriptor`) can submit cryptographic court order proofs (`CourtOrderDescriptor`) to unlock view keys under jurisdictional mandates.
+3. **Graph Explorer Dynamic Gating**: The frontend `<graph-explorer>` and `<sovereign-note-inbox>` inspect these ReBAC tuples at runtime, dynamically withholding shielded notes and private relations from unauthorized viewers while rendering approved audit traces.
+

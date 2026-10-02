@@ -58,6 +58,17 @@ reach production for every stub or WIP item.
 |---|---|---|
 | [SGX Gramine Confidential Execution](#sgx-gramine-confidential-execution) | 📋 Planned | — |
 
+## Account-Lattice & Privacy Layer
+
+| Component | Status | Module |
+|---|---|---|
+| [CAR 64-Slot Register](#content-addressable-register-car-64-slot-space) | ✅ Production | `lattice::car_register` |
+| [Blind Note Commitments & Superposition](#blind-note-commitments--superposition-collapse) | ✅ Production | `lattice::note` |
+| [Poseidon-SMT Nullifier Registry](#poseidon-smt-nullifier--double-spend-registry) | ✅ Production | `lattice::nullifier_smt` |
+| [Ephemeral Viewing Keys & Zanzibar ReBAC](#ephemeral-viewing-keys--zanzibar-rebac-governance) | ✅ Production | `lattice::viewing_key` |
+| [Dual-Path Blind Courier Transport](#dual-path-blind-courier--1-byte-view-tag-transport) | ✅ Production | `iroh::blind_note_transport` |
+| [Sovereign Lit Components & Storage Manager](#sovereign-lit-components--isolated-storage-manager) | ✅ Production | `wallet/ts/src` |
+
 ---
 
 ## Component Details

@@ -35,6 +35,16 @@ Sovereign Bunny compiles into a single high-performance binary (`bunny`) capable
 - **Zero-Honeypot Composability:** External chains are mapped to low-entropy virtual addresses (e.g. `0x00...00_01_00000001` for Ethereum Mainnet).
 - **Superposition & Nullifier Lifecycle:** Assets locked on source clusters enter `ActiveSuperposition`; destination terminal burns consume nullifiers and release native assets directly into account-lattice accounts.
 
+### 6. Content Addressable Register (CAR) 64-Slot Lattice
+- **Polymorphic Account Space:** Accounts maintain 64 typed content slots (`Slot 0`: DID Identity, `Slot 1`: Zanzibar ReBAC, `Slot 2`: Native Payment / Notes, `Slot 3`: Git DAG tip, `Slot 4`: SQL Digest, `Slot 5`: X-Road descriptor, `Slot 6`: Interface contract, `Slot 7`: Merit rank vector, `Slots 8–63`: Dynamic apps).
+- **Hierarchical Addressing:** Deterministic derivation of child accounts and named slot sub-addresses without contract deployment overhead.
+
+### 7. Blind Notes, Superposition & 1-Byte View-Tags
+- **Unspent Superposition:** Value travels as unspent commitments $C = \text{Commit}(\text{payload}, \rho, \text{pk}_{\text{recv}})$ across independent account threads.
+- **Dual-Path Routing & Relayer Anonymity:** Direct Blind Courier (Iroh QUIC) for known peers vs anonymous public gossip with zeroed recipient hints (`Address::ZERO`).
+- **99.6% Fast Rejection:** 1-byte view-tags ($T = \mathcal{H}_{\text{tag}}(S)[0]$) reject $\approx 99.61\%$ of unrelated network traffic before expensive trial AEAD decryption.
+- **Branching Decay Reclamation:** Expired notes past $E_{\text{decay}}$ can be reclaimed by the sender via secondary nullifiers, permanently preventing double-absorption in the consensus SMT.
+
 ---
 
 ## Formal Specifications & Architecture Documentation
@@ -52,6 +62,7 @@ Sovereign Bunny uses industry-standard formal interface contracts across all lay
 | **Chain Disambiguation & CROA** | **Security Specification** | [`docs/architecture/CHAIN_DISAMBIGUATION_CROA.md`](docs/architecture/CHAIN_DISAMBIGUATION_CROA.md) | CAIP-2/fork-digest anchors, BGP CROAs, Snowman VRF tie-breaking, and ZK light-clients. |
 | **Mirrored Foreign Chains** | **Consensus Architecture** | [`docs/architecture/MIRRORED_CHAINS_LATTICE_THREADS.md`](docs/architecture/MIRRORED_CHAINS_LATTICE_THREADS.md) | Foreign blockchains as virtual account threads on the Account-Lattice with reorg isolation. |
 | **Decentralized CMS & P2P Data** | **Storage Architecture** | [`docs/architecture/DECENTRALIZED_CMS_P2P_DATA.md`](docs/architecture/DECENTRALIZED_CMS_P2P_DATA.md) | Post-Ceramic local-first P2P data layers (Iroh, Tableland, OrbitDB, Polybase). |
+| **Blind Note Transport & Privacy** | **Transport Specification** | [`docs/architecture/BLIND_NOTE_TRANSPORT.md`](docs/architecture/BLIND_NOTE_TRANSPORT.md) | Dual-path routing, 1-byte view-tag scanning, and zero metadata leakage. |
 | **Penta-Vector Economics & VFS** | **Economic Specification** | [`docs/architecture/PENTA_VECTOR_ECONOMICS.md`](docs/architecture/PENTA_VECTOR_ECONOMICS.md) | 20% capped orthogonal emission vectors, smart slashing matrix, Kryder decay, and WASI VFS driver. |
 | **Daemon ABI & Routing** | **Architecture Guide** | [`docs/architecture/DAEMON_ABI.md`](docs/architecture/DAEMON_ABI.md) | Service decomposition and streaming matrix. |
 

@@ -18,7 +18,8 @@ alongside the formal diagrams and state machines.
 | [ZK-OIDC Authentication](zk-oidc.md) | W3C DID identity, multi-curve keys, quantum trigger, ZK auth proofs |
 | [Jurisdiction & Compliance](jurisdiction.md) | SMT quadrant bitmask, compliance vectors, jurisdictional reveal |
 | [SMT State Model](smt-state.md) | Sparse Merkle Tree structure for account state commitments |
-| [Superposition State](superposition.md) | Parallel speculative execution and state superposition |
+| [Superposition State](superposition.md) | Parallel speculative execution, blind notes, and branching reclamation |
+| [Blind Note Transport](blind-note-transport.md) | Dual-path routing, 1-byte view-tag scanning, and relayer anonymity |
 | [Daemon API & ABI](daemon-abi.md) | SSZ envelope format, precompile bytecode routing matrix |
 
 ## Cross-References

@@ -393,3 +393,76 @@ production_requires = [
   "BGP ASN must be cross-referenced with an IP-to-ASN database at registration time",
   "Vivaldi coordinates must be validated against measured round-trip times to known peers",
 ]
+
+# ─── Account-Lattice & Privacy Components ────────────────────────────────────
+
+[component.car_register]
+name     = "Content Addressable Register (CAR) 64-Slot Space"
+status   = "production"
+crate    = "sovereign-consensus"
+module   = "lattice::car_register"
+arch_doc = "architecture/EPOCH_LATTICE.md"
+description = """
+64-slot typed polymorphic register supporting hierarchical addressing,
+canonical system slots (DID, Zanzibar ReBAC, Notes, Git, SQL, X-Road, ABI, Merit),
+and dynamic user-mounted apps with cold storage rehydration.
+"""
+
+[component.blind_notes]
+name     = "Blind Note Commitments & Superposition Collapse"
+status   = "production"
+crate    = "sovereign-consensus"
+module   = "lattice::note"
+arch_doc = "architecture/SUPERPOSITION_STATE.md"
+description = """
+Privacy-preserving note commitments with 1-byte view-tags and decay epoch.
+Enforces 4 circuit invariants for superposition absorption and branching
+reclamation nullifiers for sender recovery upon expiration.
+"""
+
+[component.nullifier_smt]
+name     = "Poseidon-SMT Nullifier & Double-Spend Registry"
+status   = "production"
+crate    = "sovereign-consensus"
+module   = "lattice::nullifier_smt"
+arch_doc = "architecture/SMT_STATE.md"
+description = """
+BN254 Poseidon Sparse Merkle Tree tracking spend and reclamation nullifiers
+with O(log N) non-membership proofs and atomic reorg checkpoints.
+"""
+
+[component.viewing_keys]
+name     = "Ephemeral Viewing Keys & Zanzibar ReBAC Governance"
+status   = "production"
+crate    = "sovereign-consensus"
+module   = "lattice::viewing_key"
+arch_doc = "architecture/JURISDICTION_REVEAL.md"
+description = """
+Decouples spending capability from viewing capability. Ephemeral viewing keys
+are governed by Zanzibar ReBAC tuples in CAR Slot 1, enabling selective audit
+and court order compliance without private key exposure.
+"""
+
+[component.blind_note_transport]
+name     = "Dual-Path Blind Courier & 1-Byte View-Tag Transport"
+status   = "production"
+crate    = "sovereign-network"
+module   = "iroh::blind_note_transport"
+arch_doc = "architecture/BLIND_NOTE_TRANSPORT.md"
+description = """
+Direct point-to-point Iroh QUIC routing (Blind Courier) and anonymous public
+gossip with 1-byte view-tags rejecting ~99.61% of non-matching network notes
+before trial AEAD decryption.
+"""
+
+[component.wallet_sdk_components]
+name     = "Sovereign Lit Components & Isolated Storage Manager"
+status   = "production"
+crate    = "wallet"
+module   = "wallet/ts/src"
+arch_doc = "guide/wallet-integration.md"
+description = """
+Single-file browser wallet with reactive Lit custom elements, XState v5 actors,
+and strict cross-account storage isolation under accounts/<address>/.
+"""
+
