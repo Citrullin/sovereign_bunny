@@ -13,6 +13,10 @@ rustc-ice-*
 
 /wallet/target_wasm
 /wallet/www/pkg
+/wallet/www/components
+/wallet/www/sovereign_client.js
+/wallet/www/contracts.js
+/wallet/www/app.js
 /wallet/pkg
 /wallet/app
 /wallet/dist
@@ -28,25 +32,9 @@ dist/
 # Documentation build output
 /docs/book/
 
-# LLM agent context & editor environments (copy *.example for local use)
-GEMINI.md
-AGENTS.md
-CLAUDE.md
-.agents/
-.gemini/
-.cursor/
-.windsurf/
-
-# Environment files & local overrides
+# Generic environment files & local overrides
 .env
 .env.*
 *.env
 *.local
 
-# IDE & OS metadata
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.DS_Store

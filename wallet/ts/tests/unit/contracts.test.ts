@@ -9,19 +9,19 @@ import {
 } from '../../src/contracts.js';
 import { PrecompileName } from '../../src/types.js';
 
-function runTests() {
+async function runTests() {
     console.log("🧪 Running Sovereign Contracts & Precompiles Unit Tests...\n");
 
-    // 1. Verify EIP-1352 address space for all 13 precompiles
+    // 1. Verify EIP-1352 address space for all 14 precompiles
     console.log("1. Verifying EIP-1352 precompile address space...");
     const precompileEntries = Object.entries(PRECOMPILES) as [PrecompileName, string][];
-    assert.strictEqual(precompileEntries.length, 13, "Must have exactly 13 defined precompiles");
+    assert.strictEqual(precompileEntries.length, 14, "Must have exactly 14 defined precompiles");
 
     for (const [name, addr] of precompileEntries) {
         assert.ok(ethers.isAddress(addr), `${name} address ${addr} must be a valid EVM address`);
         assert.ok(addr.startsWith("0x000000000000000000000000000000000000"), `${name} address must be in EIP-1352 low-entropy namespace`);
     }
-    console.log("   ✅ All 13 precompiles verified in low-entropy namespace.\n");
+    console.log("   ✅ All 14 precompiles verified in low-entropy namespace.\n");
 
     // 2. Verify ABI function selectors against ISovereignPrecompiles.sol
     console.log("2. Verifying function selectors and ABI encoding...");
@@ -67,6 +67,12 @@ function runTests() {
     const regDidFrag = didIface.getFunction("registerDid");
     assert.ok(regDidFrag, "DidRegistry ABI must define registerDid");
     console.log(`   ✅ DID Registry registerDid selector: ${regDidFrag.selector}`);
+
+    // Note Registry: absorbNote & commitNote
+    const noteIface = new ethers.Interface(SOVEREIGN_ABIS.NOTE_REGISTRY);
+    const absorbFrag = noteIface.getFunction("absorbNote");
+    assert.ok(absorbFrag, "NoteRegistry ABI must define absorbNote");
+    console.log(`   ✅ Note Registry absorbNote selector: ${absorbFrag.selector}`);
 
     // Lattice Height: getAccountHeight(address)
     const heightIface = new ethers.Interface(SOVEREIGN_ABIS.LATTICE_HEIGHT);
@@ -120,6 +126,38 @@ function runTests() {
     const zanCalldata = "0x9586e679" + zanEncoded.slice(2);
     assert.ok(zanCalldata.startsWith("0x9586e679"), "Zanzibar calldata starts with check selector");
     console.log("   ✅ W3C DID Document format and Zanzibar tuple calldata verified for live execution.\n");
+
+    // 6. Test Viem Native Encoders & Decoders
+    console.log("6. Testing Viem native Precompile encoders and decoders...");
+    const { encodeViemPrecompileCall, decodeViemPrecompileResult, SOVEREIGN_VIEM_ABIS } = await import('../../src/contracts.js');
+    const viemCalldata = encodeViemPrecompileCall("ROUTER", "mountSlot", [
+        3,
+        "vcs.git_dag",
+        "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ]);
+    assert.ok(viemCalldata.startsWith("0x745ced80"), "Viem mountSlot calldata must start with 0x745ced80");
+    console.log("   ✅ Viem native precompile calldata successfully encoded: " + viemCalldata.slice(0, 18) + "...");
+
+    // 7. Test CBOR Codec Bidirectional Encoding / Decoding for Blind Notes & Metadata
+    console.log("7. Testing CBOR bidirectional encoding / decoding for Blind Notes...");
+    const { CborCodec } = await import('../../src/components/cbor_codec.js');
+    const sampleNoteMetadata = {
+        chain_id: 1337,
+        source: "0x1111111111111111111111111111111111111111",
+        target_slot: 2,
+        memo: "Cross-chain blind note zero-gas settlement",
+        active: true
+    };
+    const cborBytes = CborCodec.encode(sampleNoteMetadata);
+    assert.ok(cborBytes.length > 0, "CBOR bytes must not be empty");
+    const cborHex = CborCodec.toHex(sampleNoteMetadata);
+    assert.ok(cborHex.startsWith("0x"), "CBOR hex must start with 0x");
+    const decodedCbor = CborCodec.decode(cborHex);
+    assert.strictEqual(decodedCbor.chain_id, 1337);
+    assert.strictEqual(decodedCbor.target_slot, 2);
+    assert.strictEqual(decodedCbor.memo, "Cross-chain blind note zero-gas settlement");
+    assert.strictEqual(decodedCbor.active, true);
+    console.log("   ✅ CBOR round-trip encoding & decoding verified for cross-chain blind notes.\n");
 
     console.log("🎉 All Contracts & Precompiles Unit Tests Passed Successfully!");
 }

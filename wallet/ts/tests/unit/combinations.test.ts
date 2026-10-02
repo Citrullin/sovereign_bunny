@@ -72,6 +72,22 @@ function runCombinationTests() {
     assert.strictEqual(rawClient.mode, 'legacy_wrapped');
     console.log("   ✅ Dynamic mode transitions verified.\n");
 
+    // 6. Test Viem Client Adapters (toViemPublicClient and toViemWalletClient)
+    console.log("6. Testing Viem Client Adapters (Public & Wallet Client)...");
+    const viemPublic = wrappedClient.toViemPublicClient();
+    assert.strictEqual(viemPublic.chain.id, 1337);
+    assert.strictEqual(viemPublic.chain.nativeCurrency.symbol, "TBL");
+    assert.strictEqual(typeof viemPublic.readContract, "function");
+    assert.strictEqual(typeof viemPublic.getAccountHeight, "function");
+    assert.strictEqual(typeof viemPublic.resolveSlot, "function");
+
+    const viemWallet = wrappedClient.toViemWalletClient("0x1111111111111111111111111111111111111111");
+    assert.strictEqual(viemWallet.chain.id, 1337);
+    assert.strictEqual(viemWallet.account, "0x1111111111111111111111111111111111111111");
+    assert.strictEqual(typeof viemWallet.sendTransaction, "function");
+    assert.strictEqual(typeof viemWallet.writeContract, "function");
+    console.log("   ✅ Viem dual-mode adapter interfaces verified.\n");
+
     console.log("🎉 All 4 Execution Combinations Unit Tests Passed Successfully!");
 }
 

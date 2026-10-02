@@ -1,0 +1,19 @@
+{
+  "networkName": "Sovereign Ledger",
+  "chainId": 1337,
+  "rpcUrl": "http://localhost:8545",
+  "storageUrl": "http://localhost:8548",
+  "ticker": "TBL",
+  "enclaveCapability": "SimulatedDev",
+  "apiMode": "legacy",
+  "slots": [
+    { "id": 0, "name": "DID Document Root", "pluginId": "core.did_identity", "precompile": "0x03" },
+    { "id": 1, "name": "Zanzibar ReBAC SMT", "pluginId": "core.zanzibar", "precompile": "0x61" },
+    { "id": 2, "name": "Native Payment Core", "pluginId": "core.native_payment", "precompile": "0x02" },
+    { "id": 3, "name": "Git VCS Object DAG", "pluginId": "vcs.git_dag", "precompile": "0x63" },
+    { "id": 4, "name": "Relational SQL Digest", "pluginId": "ext.sqldigest", "precompile": "0x62" },
+    { "id": 5, "name": "X-Road Service Descriptor", "pluginId": "authority.xroad_descriptor", "precompile": "0x05" },
+    { "id": 6, "name": "Supply Chain Interface", "pluginId": "vcs.interface_contract", "precompile": "0x66" },
+    { "id": 7, "name": "Reputation & Merit Score", "pluginId": "reputation.merit", "precompile": "0x07" }
+  ]
+}

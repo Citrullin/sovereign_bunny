@@ -644,3 +644,335 @@ header h1 {
     margin-bottom: 4px;
     background: rgba(255, 204, 0, 0.1);
 }
+
+/* Graph Explorer & Authority Panel Styling */
+.graph-explorer-root {
+    background: #0f1319;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: inherit;
+    color: #e2e8f0;
+}
+
+.graph-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 8px;
+}
+
+.graph-toolbar .filters {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    background: #182230;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.65rem;
+    transition: all 0.2s;
+}
+
+.filter-btn:hover, .filter-btn.active {
+    background: #2563eb;
+    color: #fff;
+    border-color: #3b82f6;
+}
+
+.graph-main-layout {
+    display: flex;
+    gap: 14px;
+    min-height: 380px;
+}
+
+@media (max-width: 900px) {
+    .graph-main-layout {
+        flex-direction: column;
+    }
+}
+
+.graph-canvas-container {
+    flex: 1.6;
+    background: #0a0d14;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 10px;
+    max-height: 480px;
+    overflow-y: auto;
+}
+
+.node-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+}
+
+.graph-node-chip {
+    background: #141b26;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.graph-node-chip:hover {
+    transform: translateY(-2px);
+    border-color: #66fcf1;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.graph-node-chip.selected {
+    border-width: 2px;
+    background: #1e293b;
+    box-shadow: 0 0 10px rgba(102, 252, 241, 0.3);
+}
+
+.chip-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.chip-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.chip-label {
+    font-size: 0.65rem;
+    font-weight: bold;
+    color: #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chip-addr {
+    font-size: 0.55rem;
+    color: #64748b;
+    font-family: monospace;
+}
+
+.chip-weight {
+    font-size: 0.55rem;
+    color: #ffd700;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.graph-details-sidebar {
+    flex: 1.2;
+    background: #121824;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 12px;
+    max-height: 480px;
+    overflow-y: auto;
+    font-size: 0.7rem;
+}
+
+.node-card .node-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.node-card .node-header h3 {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #f8fafc;
+    word-break: break-all;
+}
+
+.type-pill {
+    font-size: 0.55rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+.address-row code {
+    font-size: 0.6rem;
+    color: #66fcf1;
+    word-break: break-all;
+}
+
+.plugin-panel {
+    background: #0d131d;
+    border: 1px solid #233549;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: 10px;
+}
+
+.plugin-panel h4 {
+    margin: 0 0 6px 0;
+    font-size: 0.75rem;
+    color: #66fcf1;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 4px;
+}
+
+.plugin-panel p {
+    margin: 4px 0;
+    font-size: 0.65rem;
+}
+
+.badge-gold {
+    background: #eab308;
+    color: #000;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+.badge-grey {
+    background: #64748b;
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.relations-box {
+    margin-top: 10px;
+    border-top: 1px solid #1e293b;
+    padding-top: 8px;
+}
+
+.relations-box h5 {
+    margin: 0 0 4px 0;
+    font-size: 0.7rem;
+    color: #38bdf8;
+}
+
+.edge-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.62rem;
+}
+
+.edge-list li {
+    padding: 3px 0;
+    border-bottom: 1px dashed #1e293b;
+}
+
+.edge-relation {
+    color: #a855f7;
+    font-weight: bold;
+    margin-right: 4px;
+}
+
+/* Sovereign Transaction Details Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 10002;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+.modal-card {
+    width: 100%;
+    max-width: 700px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    background: #212529;
+    color: #fff;
+    box-sizing: border-box;
+}
+.modal-title {
+    color: #f7d51d !important;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.75rem;
+}
+.modal-body {
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: 75vh;
+    padding-right: 6px;
+    font-size: 0.7rem;
+    line-height: 1.6;
+}
+.action-row {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    margin-top: 15px;
+}
+.modal-overlay .info-box {
+    background: #111;
+    padding: 10px;
+    border: 2px solid #333;
+    margin: 10px 0;
+    font-family: monospace;
+    font-size: 0.65rem;
+}
+.modal-overlay .field-row {
+    margin-bottom: 4px;
+}
+.modal-overlay .field-label {
+    color: #888;
+}
+.modal-overlay .toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+.modal-overlay .toggle-btn {
+    background: #30363d;
+    border: 1px solid #555;
+    color: #c9d1d9;
+    padding: 2px 8px;
+    font-size: 0.6rem;
+    cursor: pointer;
+}
+.modal-overlay .toggle-btn.active {
+    background: #1f6feb;
+    color: #fff;
+    border-color: #388bfd;
+}
+.modal-overlay .payload-pre {
+    background: #000;
+    color: #a8ffb2;
+    padding: 6px;
+    font-size: 0.6rem;
+    word-break: break-all;
+    white-space: pre-wrap;
+    max-height: 110px;
+    overflow-y: auto;
+    margin: 4px 0 0 0;
+}
+.modal-overlay .structured-box {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    padding: 6px;
+    margin-top: 4px;
+    max-height: 140px;
+    overflow-y: auto;
+}
+

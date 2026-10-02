@@ -6,6 +6,7 @@
 // 4. Quantum-Wrapped Envelope (EIP-8141 / Secp256k1 outer frame)
 
 import { ethers } from 'ethers';
+import { encodeFunctionData, decodeFunctionResult } from 'viem';
 import {
     PrecompileName,
     SovereignClientOptions,
@@ -14,11 +15,16 @@ import {
     W3cDidDocument,
     JurisdictionComplianceResult,
     AccountSecurityPolicy,
-    AccountSecurityTier
+    AccountSecurityTier,
+    StreamingSessionConfig,
+    StreamingSessionState
 } from './types.js';
+import { GenesisVoucherItem, BlindNote, CrossChainBlindNote } from './circuits.js';
+import { CborCodec } from './components/cbor_codec.js';
 import { PRECOMPILES, getPrecompileContract, encodeRawPrecompileCall } from './contracts.js';
 import { AccountStorageManager } from './storage_manager.js';
 import { SovereignDebugger } from './debugger.js';
+import { SovereignNfcManager } from './nfc.js';
 
 export interface PqSignRequest {
     type: 'quantum_envelope' | 'did_registration' | 'lattice_claim' | 'debugger_re_sign' | 'caip_state_change';
@@ -27,6 +33,41 @@ export interface PqSignRequest {
     keyScheme: string;
     summary: string;
     calldata: string;
+}
+
+export interface SovereignViemChainConfig {
+    id: number;
+    name: string;
+    nativeCurrency: {
+        name: string;
+        symbol: string;
+        decimals: number;
+    };
+    rpcUrls: {
+        default: { http: string[] };
+        public: { http: string[] };
+    };
+}
+
+export interface SovereignViemPublicClient {
+    chain: SovereignViemChainConfig;
+    readContract: (args: { address: `0x${string}` | string; abi: any[]; functionName: string; args?: any[] }) => Promise<any>;
+    getBalance: (args: { address: `0x${string}` | string }) => Promise<bigint>;
+    getBlockNumber: () => Promise<bigint>;
+    request: (args: { method: string; params?: any[] }) => Promise<any>;
+    getAccountHeight: (address: string) => Promise<bigint>;
+    resolveSlot: (account: string, slotId: number) => Promise<AccountSlotInfo>;
+    resolveDid: (account: string) => Promise<W3cDidDocument | null>;
+    checkRebac: (namespace: number, objectId: string, relation: number, subject: string) => Promise<boolean>;
+    checkCompliance: (account: string, quadrant: number) => Promise<JurisdictionComplianceResult>;
+}
+
+export interface SovereignViemWalletClient {
+    chain: SovereignViemChainConfig;
+    account?: `0x${string}` | string;
+    sendTransaction: (args: { to: `0x${string}` | string; data?: `0x${string}` | string; value?: bigint; gas?: bigint }) => Promise<string>;
+    writeContract: (args: { address: `0x${string}` | string; abi: any[]; functionName: string; args?: any[]; value?: bigint }) => Promise<string>;
+    request: (args: { method: string; params?: any[] }) => Promise<any>;
 }
 
 export class SovereignProvider extends ethers.BrowserProvider {
@@ -173,11 +214,20 @@ export class SovereignClient {
         getReclaimTimeout: () => Promise<{ reclaim_timeout_epochs: number; current_epoch: number; blocks_per_epoch: number }>;
         setReclaimTimeout: (epochs: number) => Promise<any>;
     };
+    public notes: {
+        absorb: (nullifier: string, targetAccount: string, targetSlot?: number, epoch?: number, proofHex?: string) => Promise<any>;
+        absorbBlindNote: (note: BlindNote) => Promise<any>;
+        commit: (commitment: string, amountWei: bigint, targetSlot?: number) => Promise<any>;
+        claimVoucher: (voucher: GenesisVoucherItem) => Promise<any>;
+        dispatchCrossChainNote: (crossNote: CrossChainBlindNote) => Promise<any>;
+    };
     public sessions: {
         getPermissions: () => Promise<any>;
         createSession: () => Promise<any>;
         getSession: () => Promise<any>;
         revokeSession: () => Promise<any>;
+        openStreamingSession: (config: StreamingSessionConfig) => Promise<StreamingSessionState>;
+        streamBlindNote: (sessionId: string, targetCommitment: string, amountWei: bigint) => Promise<{ success: boolean; stateTip: string }>;
     };
     public security: {
         getPolicy: (account: string) => Promise<AccountSecurityPolicy>;
@@ -188,6 +238,7 @@ export class SovereignClient {
 
     public storageManager: AccountStorageManager;
     public debugger: SovereignDebugger;
+    public nfc: typeof SovereignNfcManager;
     public onPqSignaturePrompt?: (request: PqSignRequest) => Promise<boolean>;
 
     constructor(ethereumProvider?: ethers.Eip1193Provider | null, options: SovereignClientOptions = {}) {
@@ -220,8 +271,10 @@ export class SovereignClient {
         this.jurisdiction = this._initJurisdiction();
         this.storage = this._initStorage();
         this.lattice = this._initLattice();
+        this.notes = this._initNotes();
         this.sessions = this._initSessions();
         this.security = this._initSecurity();
+        this.nfc = SovereignNfcManager;
     }
 
     public async initSigner(): Promise<ethers.Signer | null> {
@@ -234,6 +287,16 @@ export class SovereignClient {
 
     setExecutionMode(mode: SovereignExecutionMode) {
         this.mode = mode;
+    }
+
+    setMode(apiMode: 'legacy' | 'modern' | string, cryptoWrap: 'wrapped' | 'pure' | string) {
+        if (apiMode === 'modern') {
+            this.mode = 'modern_cbor';
+        } else if (cryptoWrap === 'pure') {
+            this.mode = 'legacy_pure';
+        } else {
+            this.mode = 'legacy_wrapped';
+        }
     }
 
     /// Dispatches a precompile call according to the active execution combination
@@ -279,13 +342,17 @@ export class SovereignClient {
                     try {
                         if (this.signer) callerAddr = await this.signer.getAddress();
                     } catch (_) {}
+                    let calldata = '0x';
+                    try {
+                        calldata = encodeRawPrecompileCall(precompile, functionName, params);
+                    } catch (_) {}
                     const approved = await this.onPqSignaturePrompt({
                         type: 'caip_state_change',
                         target: PRECOMPILES[precompile],
                         caller: callerAddr,
                         keyScheme: 'ML-DSA-65',
                         summary: `Authorize CAIP state change for ${precompile}.${functionName}`,
-                        calldata: encodeRawPrecompileCall(precompile, functionName, params)
+                        calldata
                     });
                     if (!approved) {
                         throw new Error("User rejected Post-Quantum signature authorization in Sovereign Wallet");
@@ -297,22 +364,33 @@ export class SovereignClient {
             case 'legacy_wrapped': {
                 // EIP-8141 Quantum-Wrapped Envelope / standard EVM transaction with PQ calldata
                 await this.initSigner();
-                if (!this.signer) throw new Error("Wallet not connected for legacy transaction");
-                const caller = await this.signer.getAddress();
+                let caller = '0x0000000000000000000000000000000000000000';
+                try {
+                    if (this.signer) caller = await this.signer.getAddress();
+                } catch (_) {}
 
                 // Dual-signature prompt: Ask user explicitly to sign PQ request inside Sovereign Wallet
                 if (this.onPqSignaturePrompt) {
+                    let calldata = '0x';
+                    try {
+                        calldata = encodeRawPrecompileCall(precompile, functionName, params);
+                    } catch (_) {}
                     const approved = await this.onPqSignaturePrompt({
                         type: 'quantum_envelope',
                         target: PRECOMPILES[precompile],
                         caller,
                         keyScheme: 'ML-DSA-65',
                         summary: `Authorize Post-Quantum signature for ${precompile}.${functionName}`,
-                        calldata: encodeRawPrecompileCall(precompile, functionName, params)
+                        calldata
                     });
                     if (!approved) {
                         throw new Error("User rejected Post-Quantum signature authorization in Sovereign Wallet");
                     }
+                }
+
+                if (!this.signer) {
+                    // Fallback to direct RPC when no external signer is injected
+                    return await this._postRpc(`bunny_${functionName}`, params);
                 }
 
                 const contract = getPrecompileContract(precompile, this.signer);
@@ -404,16 +482,38 @@ export class SovereignClient {
     private _initZanzibar() {
         const self = this;
         return {
-            async check(namespace: number, objectId: string, relation: number, subject: string): Promise<boolean> {
-                if (self.provider) {
-                    return await self.provider.checkRebac(namespace, objectId, relation, subject);
+            async check(namespace: number, objectId: string, relation: number, subject: string): Promise<any> {
+                let cleanObj = (objectId || '').trim();
+                let objHex = cleanObj;
+                if (!cleanObj.startsWith('0x') && !cleanObj.startsWith('0X')) {
+                    cleanObj = '0x' + cleanObj;
                 }
-                const res = await self._postRpc("bunny_zanzibarCheck", [namespace, objectId, relation, subject]);
-                return Boolean(res);
+                const hexChars = cleanObj.slice(2);
+                if (!/^[0-9a-fA-F]{1,64}$/.test(hexChars)) {
+                    objHex = ethers.keccak256(ethers.toUtf8Bytes(objectId));
+                } else {
+                    objHex = '0x' + hexChars.padStart(64, '0').slice(-64);
+                }
+
+                if (self.provider) {
+                    return await self.provider.checkRebac(namespace, objHex, relation, subject);
+                }
+                const res = await self._postRpc("bunny_zanzibarCheck", [namespace, objHex, relation, subject]);
+                return res;
             },
-            async inscribe(namespace: number, objectId: string, relation: number, subject: string) {
-                const objIdBytes32 = ethers.getBytes(objectId.padEnd(66, '0').slice(0, 66));
-                return await self.dispatchPrecompile('ZANZIBAR_REBAC', 'inscribeTuple', [namespace, objIdBytes32, relation, subject]);
+            async inscribe(namespace: number, objectId: string, relation: number, subject: string): Promise<any> {
+                let cleanObj = (objectId || '').trim();
+                let objHex = cleanObj;
+                if (!cleanObj.startsWith('0x') && !cleanObj.startsWith('0X')) {
+                    cleanObj = '0x' + cleanObj;
+                }
+                const hexChars = cleanObj.slice(2);
+                if (!/^[0-9a-fA-F]{1,64}$/.test(hexChars)) {
+                    objHex = ethers.keccak256(ethers.toUtf8Bytes(objectId));
+                } else {
+                    objHex = '0x' + hexChars.padStart(64, '0').slice(-64);
+                }
+                return await self.dispatchPrecompile('ZANZIBAR_REBAC', 'inscribeTuple', [namespace, objHex, relation, subject]);
             }
         };
     }
@@ -508,6 +608,83 @@ export class SovereignClient {
             },
             async revokeSession(): Promise<any> {
                 return await self._postRpc("wallet_revokeSession");
+            },
+            async openStreamingSession(config: StreamingSessionConfig): Promise<StreamingSessionState> {
+                self.setExecutionMode('streaming_escrow');
+                const res = await self._postRpc("bunny_openStreamingSession", [{
+                    sessionId: config.sessionId,
+                    peerAddress: config.peerAddress,
+                    escrowAmountWei: config.escrowAmountWei.toString(),
+                    tokenAddress: config.tokenAddress || null,
+                    maxStreamOps: config.maxStreamOps,
+                    expiresEpoch: config.expiresEpoch
+                }]);
+                return res as StreamingSessionState;
+            },
+            async streamBlindNote(sessionId: string, targetCommitment: string, amountWei: bigint): Promise<{ success: boolean; stateTip: string }> {
+                return await self._postRpc("bunny_streamBlindNote", [sessionId, targetCommitment, amountWei.toString()]);
+            }
+        };
+    }
+
+    private _initNotes() {
+        const self = this;
+        return {
+            async absorb(nullifier: string, targetAccount: string, targetSlot: number = 2, epoch: number = 1, proofHex: string = "0x01") {
+                let cleanNullifier = nullifier.startsWith("0x") ? nullifier.slice(2) : nullifier;
+                if (cleanNullifier.length < 64) cleanNullifier = cleanNullifier.padStart(64, '0');
+                else if (cleanNullifier.length > 64) cleanNullifier = cleanNullifier.slice(0, 64);
+                const nullifierBytes32 = ("0x" + cleanNullifier) as `0x${string}`;
+
+                const cleanProof = proofHex.startsWith("0x") ? proofHex : "0x" + proofHex;
+                return await self.dispatchPrecompile(
+                    'NOTE_REGISTRY',
+                    'absorbNote',
+                    [nullifierBytes32, targetAccount, targetSlot, BigInt(epoch), cleanProof, 0]
+                );
+            },
+            async absorbBlindNote(note: BlindNote) {
+                return await this.absorb(
+                    note.nullifier,
+                    note.target_account,
+                    note.target_slot,
+                    Number(note.epoch),
+                    note.proof
+                );
+            },
+            async commit(commitment: string, amountWei: bigint, targetSlot: number = 2) {
+                let cleanCommitment = commitment.startsWith("0x") ? commitment.slice(2) : commitment;
+                if (cleanCommitment.length < 64) cleanCommitment = cleanCommitment.padStart(64, '0');
+                const commitmentBytes32 = ("0x" + cleanCommitment) as `0x${string}`;
+                return await self.dispatchPrecompile(
+                    'NOTE_REGISTRY',
+                    'commitNote',
+                    [commitmentBytes32, amountWei, targetSlot],
+                    amountWei
+                );
+            },
+            async claimVoucher(voucher: GenesisVoucherItem) {
+                return await this.absorb(
+                    voucher.nullifier,
+                    voucher.target_account,
+                    voucher.target_slot ?? 2
+                );
+            },
+            async dispatchCrossChainNote(crossNote: CrossChainBlindNote): Promise<any> {
+                // Encode cross-chain metadata via native CBOR
+                const cborHex = crossNote.cbor_payload || CborCodec.toHex({
+                    source_chain_id: crossNote.source_chain_id,
+                    target_chain_id: crossNote.target_chain_id,
+                    shadow_receipt_hash: crossNote.shadow_receipt_hash,
+                    nullifier: crossNote.note.nullifier,
+                    commitment: crossNote.note.commitment,
+                    amount_wei: crossNote.note.amount_wei.toString()
+                });
+                return await self._postRpc("sovereign_dispatchCrossChainNote", [
+                    crossNote.source_chain_id.toString(),
+                    crossNote.target_chain_id.toString(),
+                    cborHex
+                ]);
             }
         };
     }
@@ -562,20 +739,11 @@ export class SovereignClient {
             params: params,
             id: Date.now()
         };
-        const endpoints = [];
-        if (method.startsWith("bunny_") || method.startsWith("sovereign_")) {
-            if (this.rpcUrl.includes(":8545")) {
-                endpoints.push(this.rpcUrl.replace(":8545", ":8546"));
-            } else if (!this.rpcUrl.includes(":8546")) {
-                endpoints.push("http://localhost:8546");
-            }
-            endpoints.push(this.rpcUrl);
-        } else {
-            endpoints.push(this.rpcUrl);
-            if (this.rpcUrl.includes(":8545")) {
-                endpoints.push(this.rpcUrl.replace(":8545", ":8546"));
-            }
+        const endpoints: string[] = [];
+        if (this.rpcUrl.includes(":8545")) {
+            endpoints.push(this.rpcUrl.replace(":8545", ":8546"));
         }
+        endpoints.push(this.rpcUrl);
 
         let lastError = null;
         for (const ep of endpoints) {
@@ -596,5 +764,137 @@ export class SovereignClient {
             }
         }
         throw lastError || new Error(`RPC failed for method ${method}`);
+    }
+
+    /// Creates a Viem-compatible Public Client adapter for readContract, RPC and precompile access
+    public toViemPublicClient(): SovereignViemPublicClient {
+        const self = this;
+        const chain: SovereignViemChainConfig = {
+            id: 1337,
+            name: "Sovereign Bunny",
+            nativeCurrency: {
+                name: "Tableland",
+                symbol: "TBL",
+                decimals: 18
+            },
+            rpcUrls: {
+                default: { http: [self.rpcUrl] },
+                public: { http: [self.rpcUrl] }
+            }
+        };
+
+        return {
+            chain,
+            async request({ method, params = [] }: { method: string; params?: any[] }): Promise<any> {
+                if (self.rawProvider) {
+                    return await self.rawProvider.request({ method, params });
+                }
+                return await self._postRpc(method, params);
+            },
+            async getBalance({ address }: { address: `0x${string}` | string }): Promise<bigint> {
+                if (self.provider) {
+                    return await self.provider.getBalance(address);
+                }
+                const res = await self._postRpc("eth_getBalance", [address, "latest"]);
+                return BigInt(res || "0x0");
+            },
+            async getBlockNumber(): Promise<bigint> {
+                if (self.provider) {
+                    const bn = await self.provider.getBlockNumber();
+                    return BigInt(bn);
+                }
+                const res = await self._postRpc("eth_blockNumber", []);
+                return BigInt(res || "0x0");
+            },
+            async readContract({ address, abi, functionName, args = [] }: { address: `0x${string}` | string; abi: any[]; functionName: string; args?: any[] }): Promise<any> {
+                const data = encodeFunctionData({ abi, functionName: functionName as any, args: args as any });
+                let resultHex: `0x${string}`;
+                if (self.provider) {
+                    resultHex = (await self.provider.call({ to: address, data })) as `0x${string}`;
+                } else {
+                    resultHex = (await self._postRpc("eth_call", [{ to: address, data }, "latest"])) as `0x${string}`;
+                }
+                const decoded = decodeFunctionResult({ abi, functionName: functionName as any, data: resultHex });
+                return decoded;
+            },
+            async getAccountHeight(address: string): Promise<bigint> {
+                return await self.lattice.getHeight(address);
+            },
+            async resolveSlot(account: string, slotId: number): Promise<AccountSlotInfo> {
+                return await self.slots.resolve(account, slotId);
+            },
+            async resolveDid(account: string): Promise<W3cDidDocument | null> {
+                return await self.did.resolve(account);
+            },
+            async checkRebac(namespace: number, objectId: string, relation: number, subject: string): Promise<boolean> {
+                return await self.zanzibar.check(namespace, objectId, relation, subject);
+            },
+            async checkCompliance(account: string, quadrant: number): Promise<JurisdictionComplianceResult> {
+                return await self.jurisdiction.check(account, quadrant);
+            }
+        };
+    }
+
+    /// Creates a Viem-compatible Wallet Client adapter for sending transactions and contract writes
+    public toViemWalletClient(accountAddress?: `0x${string}` | string): SovereignViemWalletClient {
+        const self = this;
+        const chain: SovereignViemChainConfig = {
+            id: 1337,
+            name: "Sovereign Bunny",
+            nativeCurrency: {
+                name: "Tableland",
+                symbol: "TBL",
+                decimals: 18
+            },
+            rpcUrls: {
+                default: { http: [self.rpcUrl] },
+                public: { http: [self.rpcUrl] }
+            }
+        };
+
+        return {
+            chain,
+            account: accountAddress,
+            async request({ method, params = [] }: { method: string; params?: any[] }): Promise<any> {
+                if (self.rawProvider) {
+                    return await self.rawProvider.request({ method, params });
+                }
+                return await self._postRpc(method, params);
+            },
+            async sendTransaction({ to, data = "0x", value = 0n, gas }: { to: `0x${string}` | string; data?: `0x${string}` | string; value?: bigint; gas?: bigint }): Promise<string> {
+                await self.initSigner();
+                if (self.signer) {
+                    const tx = await self.signer.sendTransaction({
+                        to,
+                        data,
+                        value,
+                        gasLimit: gas
+                    });
+                    return tx.hash;
+                }
+                if (self.rawProvider) {
+                    const from = accountAddress || (await self.rawProvider.request({ method: 'eth_accounts' }))[0];
+                    return await self.rawProvider.request({
+                        method: 'eth_sendTransaction',
+                        params: [{
+                            from,
+                            to,
+                            data,
+                            value: "0x" + value.toString(16),
+                            ...(gas ? { gas: "0x" + gas.toString(16) } : {})
+                        }]
+                    });
+                }
+                throw new Error("No signer or EIP-1193 provider configured for sendTransaction");
+            },
+            async writeContract({ address, abi, functionName, args = [], value = 0n }: { address: `0x${string}` | string; abi: any[]; functionName: string; args?: any[]; value?: bigint }): Promise<string> {
+                const data = encodeFunctionData({ abi, functionName: functionName as any, args: args as any });
+                return await this.sendTransaction({
+                    to: address,
+                    data: data as `0x${string}`,
+                    value
+                });
+            }
+        };
     }
 }

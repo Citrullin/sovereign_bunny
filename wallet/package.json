@@ -7,9 +7,11 @@
   "types": "dist/src/index.d.ts",
   "scripts": {
     "build:ts": "tsc -p tsconfig.json",
+    "build:bundle": "npx esbuild ts/src/index.ts --bundle --format=iife --global-name=SovereignSDK --outfile=dist/sovereign_sdk_bundle.js --external:ethers",
+    "build:app_bundle": "npx esbuild ts/src/app/app.ts --bundle --format=iife --outfile=dist/app_bundle.js --external:ethers",
     "build:app": "python3 build.py",
-    "build": "npm run build:ts && npm run build:app",
-    "test:unit": "node dist/tests/unit/contracts.test.js && node dist/tests/unit/combinations.test.js && node dist/tests/unit/security_policy.test.js && node dist/tests/unit/debugger.test.js && node dist/tests/unit/fediverse_and_ticker.test.js",
+    "build": "npm run build:ts && npm run build:bundle && npm run build:app_bundle && npm run build:app",
+    "test:unit": "node dist/tests/unit/contracts.test.js && node dist/tests/unit/combinations.test.js && node dist/tests/unit/security_policy.test.js && node dist/tests/unit/debugger.test.js && node dist/tests/unit/fediverse_and_ticker.test.js && node dist/tests/unit/nfc.test.js && node dist/tests/unit/onboarding_invariants_negative.test.js && node dist/tests/unit/zodiac_machine.test.js && node dist/tests/unit/graph_explorer.test.js && node dist/tests/unit/xroad_authority.test.js && node dist/tests/unit/public_explorer.test.js && node dist/tests/unit/wallet_machine.test.js && node dist/tests/unit/network_machine.test.js && node dist/tests/unit/components.test.js && node dist/tests/unit/panels_and_machines.test.js && node dist/tests/unit/note_lifecycle.test.js && node dist/tests/unit/account_isolation_negative.test.js && node dist/tests/unit/blind_note_negative.test.js && node dist/tests/unit/zodiac_safe_zanzibar_evm.test.js && node dist/tests/unit/debugger_machine.test.js && node dist/tests/unit/modal_components.test.js && node dist/tests/unit/onboarding_machine.test.js && node dist/tests/unit/navigation_machine.test.js && node dist/tests/unit/storage_machine.test.js && node dist/tests/unit/sql_schema_template_engine.test.js",
     "test:e2e": "node dist/tests/e2e/sdk_integration.test.js",
     "test": "npm run test:unit"
   },
@@ -26,10 +28,15 @@
   "license": "MIT",
   "dependencies": {
     "@fontsource/press-start-2p": "^5.3.0",
+    "cytoscape": "^3.34.3",
     "ethers": "^6.7.0",
-    "nes.css": "^2.3.0"
+    "lit": "^3.1.2",
+    "nes.css": "^2.3.0",
+    "viem": "^2.56.8",
+    "xstate": "^5.9.1"
   },
   "devDependencies": {
+    "@types/cytoscape": "^3.31.0",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   }

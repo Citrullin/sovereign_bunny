@@ -43,22 +43,27 @@ with open(os.path.join(www_dir, 'style.css'), 'r') as f:
 
 style_content = font_face_css + "\n" + nes_css_content + "\n" + app_style_content
 
-# Load contracts and sovereign SDK js
+# Load compiled Sovereign TypeScript SDK bundle (Zero redundant legacy JS files)
+bundle_path = os.path.join(base_dir, 'dist', 'sovereign_sdk_bundle.js')
+if not os.path.exists(bundle_path):
+    raise RuntimeError(f"Sovereign SDK bundle missing at {bundle_path}. Run 'npm run build:bundle' first.")
+
+with open(bundle_path, 'r') as f:
+    client_content = f.read() + """
+if (typeof SovereignSDK !== 'undefined') {
+    Object.assign(window, SovereignSDK);
+}
+"""
 contracts_content = ""
-contracts_path = os.path.join(www_dir, 'contracts.js')
-if os.path.exists(contracts_path):
-    with open(contracts_path, 'r') as f:
-        contracts_content = f.read()
 
-client_content = ""
-client_path = os.path.join(www_dir, 'sovereign_client.js')
-if os.path.exists(client_path):
-    with open(client_path, 'r') as f:
-        client_content = f.read()
-
-# Load app js
-with open(os.path.join(www_dir, 'app.js'), 'r') as f:
-    app_content = f.read()
+# Load compiled TypeScript App bundle (from dist/app_bundle.js)
+app_bundle_path = os.path.join(base_dir, 'dist', 'app_bundle.js')
+if os.path.exists(app_bundle_path):
+    with open(app_bundle_path, 'r') as f:
+        app_content = f.read()
+else:
+    with open(os.path.join(www_dir, 'app.js'), 'r') as f:
+        app_content = f.read()
 
 # Load compiled JS bindings
 with open(os.path.join(pkg_dir, 'sovereign_wallet.js'), 'r') as f:
@@ -83,7 +88,26 @@ else:
     # Fallback if wasm-pack format is slightly different
     js_bindings = js_bindings.replace("init(input)", "init(wasmBytes)")
 
-full_js = ethers_content + "\n" + wasm_init_override + "\n" + js_bindings + "\n" + contracts_content + "\n" + client_content + "\n" + app_content
+# Shim window.require for externalized dependencies (like ethers) when loaded in browser IIFE context
+require_shim = """
+if (typeof window !== 'undefined') {
+    window.require = function(mod) {
+        if (mod === 'ethers') {
+            return window.ethers;
+        }
+        throw new Error('Dynamic require of ' + mod + ' is not supported');
+    };
+}
+"""
+
+# Full JavaScript bundle:
+# 1. Ethers library
+# 2. WASM bytes & init override
+# 3. WASM JS bindings (wasm_bindgen)
+# 4. Require shim for externalized UMD modules (ethers)
+# 5. Sovereign SDK Bundle (TypeScript compiled library with contracts, client, storage, debugger, web components)
+# 6. Application Bundle (TypeScript compiled UI logic)
+full_js = ethers_content + "\n" + wasm_init_override + "\n" + js_bindings + "\n" + require_shim + "\n" + client_content + "\n" + app_content
 
 # Read template
 with open(os.path.join(www_dir, 'template.html'), 'r') as f:
@@ -118,6 +142,32 @@ else:
     # Create a basic faq.html template if missing
     with open(os.path.join(app_dir, 'faq.html'), 'w') as f_out:
         f_out.write("<h1>Sovereign Wallet FAQ</h1><p>Frequently Asked Questions.</p>")
+
+# Remove any stale graph.json from app directory to enforce dynamic Genesis / Iroh / Lattice loading
+stale_graph = os.path.join(app_dir, 'graph.json')
+if os.path.exists(stale_graph):
+    try:
+        os.remove(stale_graph)
+    except OSError:
+        pass
+
+# Copy sovereign.config.json if it exists (or fallback to example)
+config_src = os.path.join(www_dir, 'sovereign.config.json')
+if not os.path.exists(config_src):
+    config_src = os.path.join(www_dir, 'sovereign.config.example.json')
+if os.path.exists(config_src):
+    with open(config_src, 'r') as f_in:
+        with open(os.path.join(app_dir, 'sovereign.config.json'), 'w') as f_out:
+            f_out.write(f_in.read())
+
+# Copy genesis_graph.json if it exists (or fallback to example)
+genesis_graph_src = os.path.join(www_dir, 'genesis_graph.json')
+if not os.path.exists(genesis_graph_src):
+    genesis_graph_src = os.path.join(www_dir, 'genesis_graph.example.json')
+if os.path.exists(genesis_graph_src):
+    with open(genesis_graph_src, 'r') as f_in:
+        with open(os.path.join(app_dir, 'genesis_graph.json'), 'w') as f_out:
+            f_out.write(f_in.read())
 
 # Copy run-local-server.sh to the app folder and make it executable
 script_src = os.path.join(base_dir, 'run-local-server.sh')

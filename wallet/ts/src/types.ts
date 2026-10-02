@@ -2,10 +2,30 @@
 
 export type SovereignExecutionMode = 
   | 'modern_cbor'      // [CAIP-25 + CBOR + HTTP/3 | Native PQ]: The Modern Highway. CAIP session negotiates custom methods and native Post-Quantum keys over binary QUIC. No EVM gas ceremony.
+  | 'streaming_escrow' // [HTTP/3 Direct P2P Streaming + Legacy Escrow]: Open a high-speed direct QUIC session via Rabby/MetaMask escrow, streaming micro-commitments with blind notes.
   | 'legacy_wrapped'   // [No CAIP (Standard EVM) | Quantum Wrapped PQ]: The Bridge. MetaMask has no CAIP custom curve support, so we wrap the ML-DSA-65 payload inside an EIP-8141 Secp256k1 envelope to let legacy wallets broadcast it.
   | 'legacy_pure'      // [No CAIP (Standard EVM) | Classical Secp256k1]: Vanilla Ethereum mode. Standard Web3 tooling, Foundry/Hardhat, and accounts without quantum keys.
   | 'precompile_packed'// Native precompile wire encoding: Directly structured binary layouts (DID registry, sweep, ReBAC, CMS).
   | 'bytecode_raw';    // [Fuck it, we ballin | Raw Bytecode]: Bare-metal on-chain execution. No ABIs, no Ethers classes. Smart contracts pushing raw bytes directly to precompiles (0x01..0x0100) via low-level CALL opcodes.
+
+export interface StreamingSessionConfig {
+    sessionId: string;
+    peerAddress: string;
+    escrowAmountWei: bigint;
+    tokenAddress?: string;
+    maxStreamOps: number;
+    expiresEpoch: number;
+    requiresUserConfirmationPerOp: boolean;
+}
+
+export interface StreamingSessionState {
+    sessionId: string;
+    active: boolean;
+    peerAddress: string;
+    escrowRemainingWei: bigint;
+    operationsStreamed: number;
+    lastCommitmentHash: string;
+}
 
 export interface PrecompileAddresses {
     ROUTER: string;
@@ -19,6 +39,7 @@ export interface PrecompileAddresses {
     STORAGE_DA: string;
     SIGNAL_REGISTRY: string;
     ZANZIBAR_REBAC: string;
+    NOTE_REGISTRY: string;
     CMS_ACTPUB: string;
     LATTICE_HEIGHT: string;
 }
@@ -37,6 +58,24 @@ export interface AccountSlotInfo {
     mounted: boolean;
     pluginId: string;
     root: string;
+}
+
+export interface AccountSlotRecord {
+    slotId: number;
+    commitment: string;
+    previousCommitment?: string;
+    sequence?: number;
+    lastUpdatedEpoch?: number;
+    verifierKey?: string;
+    pluginId: string;
+}
+
+export interface PolymorphicSlotSchema {
+    slotId: number;
+    name: string;
+    pluginName: string;
+    version: number;
+    activationEpoch: number;
 }
 
 export interface W3cVerificationMethod {
