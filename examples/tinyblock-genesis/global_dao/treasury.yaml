@@ -1,0 +1,19 @@
+address: "0x0000000000000000000000000000000000000101"
+entity_kind: "DAO"
+name: "Global Tinyblock DAO"
+did: "did:sovereign:1337:dao-global-tinyblock"
+initial_balance: "0x52b7d2dcc80cd2e4000000" # 100,000,000 TBL
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "global-dao-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "global-dao-rebac-v1"
+  - slot_id: 2
+    plugin_id: "core.native_payment"
+    commitment: "global-dao-payment-v1"
+  - slot_id: 8
+    plugin_id: "dao.voting_weight"
+    commitment: "global-dao-weight-registry-v1"

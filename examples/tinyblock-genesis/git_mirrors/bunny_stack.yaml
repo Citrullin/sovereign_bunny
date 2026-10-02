@@ -1,0 +1,4 @@
+remote_url: "https://github.com/citrullin/bunny-stack"
+local_alias: "gitea.tinyblock.dev/tinyblock/bunny-stack"
+mirror_type: "full"
+linked_repo_account: "0x0000000000000000000000000000000000000302"

@@ -1,0 +1,15 @@
+# European DAO ReBAC relations (Namespace 1)
+# 1 = admin, 2 = council, 3 = auditor, 4 = member
+tuples:
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000102" # Europe DAO
+    relation: 1 # admin
+    subject: "did:sovereign:1337:0xa11ce00000000000000000000000000000000001" # @alice-admin
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000102"
+    relation: 3 # auditor
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000201" # BaFin
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000102"
+    relation: 3 # auditor
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000202" # EU X-Road

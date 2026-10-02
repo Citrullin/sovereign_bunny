@@ -1,0 +1,15 @@
+target_account: "0x0000000000000000000000000000000000000202"
+target_slot: 5
+value: "0x0"
+is_public: true
+content_type: "xroad_descriptor"
+nullifier: "0x000000000000000000000000000000000000000000000000000000000000e001"
+secret: "0x000000000000000000000000000000000000000000000000000000000000e001"
+iroh_cid: "bafybeigeuxroadpublicnote001"
+payload:
+  member_class: "GOV"
+  member_code: "EE-RIA-XROAD-01"
+  subsystem_code: "DataExchangeGateway"
+  endpoint_url_hash: "keccak256(https://x-road.eu/)"
+  cert_fingerprint_sha256: "PLACEHOLDER_EU_XROAD_CERT_HASH"
+  protocol_version: "6.0"

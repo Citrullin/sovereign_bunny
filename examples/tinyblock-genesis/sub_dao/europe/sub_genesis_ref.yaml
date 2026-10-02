@@ -1,0 +1,12 @@
+bundle_type: "sub_genesis"
+parent_genesis_cid: "bafybeig_PLACEHOLDER_REAL_CID_GOES_HERE"
+parent_network_name: "sovereign-bunny-mainnet"
+chain_id: 1337
+initiated_at_epoch: null
+accounts_introduced:
+  - "0x0000000000000000000000000000000000000102"
+back_reference_tuples:
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000101"
+    relation: 5 # sub_dao_member
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000102"

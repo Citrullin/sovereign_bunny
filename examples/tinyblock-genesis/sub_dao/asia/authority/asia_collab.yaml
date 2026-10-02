@@ -1,0 +1,46 @@
+address: "0x0000000000000000000000000000000000000208"
+entity_kind: "CollaborativeAuthority"
+did: "did:sovereign:1337:asia-collab-enforcement"
+description: >
+  Joint Asia collaborative enforcement account.
+  Both India (MeitY) and China (MIIT) authorities must provide
+  threshold approval for any compliance action in the Asia DAO region.
+  This enforces that neither party can act unilaterally.
+
+threshold_control:
+  threshold: 2
+  signers:
+    - "0x0000000000000000000000000000000000000206" # India (MeitY)
+    - "0x0000000000000000000000000000000000000207" # China (MIIT)
+  scheme: "native_smart_account"
+
+compliance_model:
+  type: "mutual_veto"
+  enforcement_function: "compliance_counter"
+  counter_address: "0x0000000000000000000000000000000013370003"
+  india_view_key_slot: 0
+  china_view_key_slot: 0
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "asia-collab-did-root-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "asia-collab-rebac-v1"
+  - slot_id: 9
+    plugin_id: "authority.compliance_counter"
+    commitment: "asia-collab-compliance-counter-ref-v1"
+
+blind_note:
+  is_public: true
+  target_slot: 9
+  value: "0x0"
+  content_type: "collaborative_enforcement_policy"
+  payload:
+    policy: "mutual_veto"
+    signers:
+      - "0x0000000000000000000000000000000000000206"
+      - "0x0000000000000000000000000000000000000207"
+    threshold: 2
+    compliance_counter: "0x0000000000000000000000000000000013370003"

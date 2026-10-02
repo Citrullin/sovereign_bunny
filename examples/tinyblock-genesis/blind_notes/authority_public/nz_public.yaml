@@ -1,0 +1,15 @@
+target_account: "0x0000000000000000000000000000000000000205"
+target_slot: 5
+value: "0x0"
+is_public: true
+content_type: "xroad_descriptor"
+nullifier: "0x0000000000000000000000000000000000000000000000000000000000006e7a"
+secret: "0x0000000000000000000000000000000000000000000000000000000000006e7a"
+iroh_cid: "bafybeignzpublicnote001"
+payload:
+  member_class: "REGISTRAR"
+  member_code: "NZ-MBIE-001"
+  subsystem_code: "CorporateRegistries"
+  endpoint_url_hash: "keccak256(https://companies-register.companiesoffice.govt.nz/)"
+  cert_fingerprint_sha256: "PLACEHOLDER_NZ_MBIE_CERT_HASH"
+  protocol_version: "4.0"

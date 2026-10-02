@@ -1,0 +1,36 @@
+address: "0x0000000000000000000000000000000000000203"
+entity_kind: "Authority"
+did: "did:sovereign:1337:ghana-gra"
+authority_jurisdiction: "Ghana"
+authority_body: "GRA / Bank of Ghana"
+authority_url: "https://gra.gov.gh"
+regulatory_frameworks: ["BoG-Sandbox", "Ghana-Tax-Act"]
+
+xroad_member_code: "GH-BOG-001"
+xroad_supervised_entity: null
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "ghana-did-root-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "ghana-rebac-v1"
+  - slot_id: 5
+    plugin_id: "authority.xroad_descriptor"
+    commitment: "ghana-xroad-descriptor-v1"
+
+blind_note:
+  is_public: true
+  target_slot: 5
+  value: "0x0"
+  content_type: "xroad_descriptor"
+  payload:
+    member_class: "CENTRAL_BANK"
+    member_code: "GH-BOG-001"
+    subsystem_code: "SettlementGateway"
+    endpoint_url_hash: "keccak256(https://bog.gov.gh/)"
+    cert_fingerprint_sha256: "PLACEHOLDER_GH_BOG_CERT_HASH"
+    protocol_version: "4.0"
+    granted_capabilities:
+      - "cross_border_settlement"

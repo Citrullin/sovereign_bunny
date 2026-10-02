@@ -1,0 +1,15 @@
+target_account: "0x0000000000000000000000000000000000000201"
+target_slot: 0
+value: "0x0"
+is_public: true
+content_type: "xroad_descriptor"
+nullifier: "0x000000000000000000000000000000000000000000000000000000000000baf1"
+secret: "0x000000000000000000000000000000000000000000000000000000000000baf1"
+iroh_cid: "bafybeigbafinpublicnote001"
+payload:
+  member_class: "GOV"
+  member_code: "DE-BAFIN-001"
+  subsystem_code: "ComplianceGateway"
+  endpoint_url_hash: "keccak256(https://xroad.bafin.de/)"
+  cert_fingerprint_sha256: "PLACEHOLDER_REAL_CERT_HASH"
+  protocol_version: "4.0"

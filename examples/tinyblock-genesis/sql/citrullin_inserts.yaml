@@ -1,0 +1,14 @@
+target_account: "0x0000000000000000000000000000000000000401"
+initial_inserts:
+  - table: "users"
+    data:
+      did: "did:sovereign:1337:0xa11ce00000000000000000000000000000000001"
+      address: "0xa11ce00000000000000000000000000000000001"
+      role: "admin"
+  - table: "dao_membership"
+    data:
+      dao_address: "0x0000000000000000000000000000000000000102"
+      member_address: "0xa11ce00000000000000000000000000000000001"
+      role: "admin"
+      voting_weight: 10000
+      joined_epoch: 0

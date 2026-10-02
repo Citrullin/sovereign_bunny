@@ -1,0 +1,19 @@
+address: "0x0000000000000000000000000000000000000105"
+entity_kind: "DAO"
+name: "Africa Sovereign DAO"
+region: "Africa"
+voting_weight_bps: 1700
+is_shell: true
+did: "did:sovereign:1337:dao-africa"
+initial_balance: "0x0"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "africa-dao-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "africa-dao-rebac-v1"
+  - slot_id: 8
+    plugin_id: "dao.voting_weight"
+    commitment: "0x00000000000000000000000000000000000000000000000000000000000006a4" # 1700 bps

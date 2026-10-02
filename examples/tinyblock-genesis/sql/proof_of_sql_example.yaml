@@ -1,0 +1,11 @@
+target_account: "0x0000000000000000000000000000000000000401"
+proof_type: "proof_of_sql_v0"
+query: "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+expected_result: 1
+schema_commitment: "NEXTERP_SCHEMA_DIGEST_V1"
+prover: "proof-of-sql-v0.1"
+proof_bytes: "PLACEHOLDER_PROOF_OF_SQL_BYTES"
+verifier_key: "PLACEHOLDER_PROOF_OF_SQL_VK"
+note: >
+  This anchors the database state at genesis epoch 0.
+  @citrullin is admin with exactly 1 row confirming genesis authority.

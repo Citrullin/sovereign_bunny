@@ -1,0 +1,31 @@
+address: "0x0000000000000000000000000000000000000301"
+entity_kind: "GitRepository"
+did: "did:sovereign:1337:repo-sovereign-bunny"
+repo_name: "sovereign-bunny"
+remote_url: "https://github.com/citrullin/sovereign-bunny"
+local_mirror_alias: "gitea.tinyblock.dev/tinyblock/sovereign-bunny"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "sovereign-bunny-repo-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "sovereign-bunny-zanzibar-v1"
+  - slot_id: 3
+    plugin_id: "vcs.git_dag"
+    commitment: "GENESIS_GIT_HEAD_OID_SOVEREIGN_BUNNY"
+  - slot_id: 6
+    plugin_id: "vcs.interface_contract"
+    commitment: "sovereign-bunny-interface-v1"
+
+depends_on:
+  - repo_account: "0x0000000000000000000000000000000000000302"
+    relation: "build_dependency"
+    pinned_commitment: "GENESIS_GIT_HEAD_OID_BUNNY_STACK"
+
+threshold_control:
+  threshold: 1
+  signers:
+    - "0xa11ce00000000000000000000000000000000001" # @alice-admin
+  scheme: "native_smart_account"

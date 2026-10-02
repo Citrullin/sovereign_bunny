@@ -1,0 +1,7 @@
+# Studio and node operator whitelist
+admin_addresses:
+  - "0xa11ce00000000000000000000000000000000001" # @alice-admin ETH address
+node_operators:
+  - address: "0xa11ce00000000000000000000000000000000001"
+    alias: "alice-primary"
+    role: "validator_admin"

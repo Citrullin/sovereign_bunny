@@ -1,0 +1,19 @@
+address: "0x0000000000000000000000000000000000000104"
+entity_kind: "DAO"
+name: "South America Sovereign DAO"
+region: "South America"
+voting_weight_bps: 560
+is_shell: true
+did: "did:sovereign:1337:dao-south-america"
+initial_balance: "0x0"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "south-america-dao-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "south-america-dao-rebac-v1"
+  - slot_id: 8
+    plugin_id: "dao.voting_weight"
+    commitment: "0x0000000000000000000000000000000000000000000000000000000000000230" # 560 bps

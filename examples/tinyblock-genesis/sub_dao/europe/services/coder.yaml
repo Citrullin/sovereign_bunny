@@ -1,0 +1,17 @@
+address: "0x0000000000000000000000000000000000000403"
+entity_kind: "Service"
+did: "did:sovereign:1337:service-coder"
+service_name: "CoderRemoteWorkspaces"
+oci_image: "ghcr.io/coder/coder:latest"
+oci_digest: "sha256:PLACEHOLDER_CODER_IMAGE_DIGEST"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "coder-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "coder-rebac-v1"
+  - slot_id: 6
+    plugin_id: "vcs.interface_contract"
+    commitment: "coder-interface-v1"

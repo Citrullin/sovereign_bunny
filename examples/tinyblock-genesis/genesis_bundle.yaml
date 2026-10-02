@@ -1,0 +1,61 @@
+# Master manifest for a multi-file genesis
+schema_version: "1.0"
+bundle_type: "network_genesis"          # vs "sub_genesis"
+bundle_id: "tinyblock-genesis-v1"
+parent_genesis_cid: null               # null = this IS the root genesis
+compiled_by: "bunny genesis compile --bundle"
+
+sections:
+  network: "network.yaml"
+  whitelist: "whitelist.yaml"
+  global_dao: "global_dao/treasury.yaml"
+  voting_weights: "global_dao/voting_weights.yaml"
+  sub_daos:
+    - "sub_dao/europe/dao.yaml"
+    - "sub_dao/north_america/dao.yaml"
+    - "sub_dao/south_america/dao.yaml"
+    - "sub_dao/africa/dao.yaml"
+    - "sub_dao/central_asia/dao.yaml"
+    - "sub_dao/asia/dao.yaml"
+    - "sub_dao/oceania/dao.yaml"
+  authorities:
+    - "sub_dao/europe/authority/bafin.yaml"
+    - "sub_dao/europe/authority/eu_xroad.yaml"
+    - "sub_dao/africa/authority/ghana.yaml"
+    - "sub_dao/central_asia/authority/kyrgyzstan.yaml"
+    - "sub_dao/asia/authority/india.yaml"
+    - "sub_dao/asia/authority/china.yaml"
+    - "sub_dao/asia/authority/asia_collab.yaml"
+    - "sub_dao/oceania/authority/new_zealand.yaml"
+  repos:
+    - "sub_dao/europe/repos/sovereign_bunny.yaml"
+    - "sub_dao/europe/repos/bunny_stack.yaml"
+  services:
+    - "sub_dao/europe/services/nexterp.yaml"
+    - "sub_dao/europe/services/nextcloud.yaml"
+    - "sub_dao/europe/services/coder.yaml"
+  contracts:
+    - "contracts/GlobalPaymaster.yaml"
+    - "contracts/DAORegistry.yaml"
+    - "contracts/ComplianceCounter.yaml"
+  blind_notes:
+    - "blind_notes/citrullin_genesis.yaml"
+    - "blind_notes/authority_public/bafin_public.yaml"
+    - "blind_notes/authority_public/eu_xroad_public.yaml"
+    - "blind_notes/authority_public/ghana_public.yaml"
+    - "blind_notes/authority_public/kyrgyzstan_public.yaml"
+    - "blind_notes/authority_public/nz_public.yaml"
+    - "blind_notes/authority_public/asia_collab_public.yaml"
+  rebac:
+    - "rebac/global_dao_tuples.yaml"
+    - "rebac/european_dao_tuples.yaml"
+    - "rebac/asia_collab_tuples.yaml"
+  sql:
+    - "sql/nexterp_schema.yaml"
+    - "sql/citrullin_inserts.yaml"
+    - "sql/proof_of_sql_example.yaml"
+  git_mirrors:
+    - "git_mirrors/sovereign_bunny.yaml"
+    - "git_mirrors/bunny_stack.yaml"
+  iot:
+    - "iot/example_td.yaml"

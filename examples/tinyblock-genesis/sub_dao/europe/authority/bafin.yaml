@@ -1,0 +1,41 @@
+address: "0x0000000000000000000000000000000000000201"
+entity_kind: "Authority"
+did: "did:sovereign:1337:bafin-de"
+authority_jurisdiction: "Germany"
+authority_body: "BaFin"
+authority_url: "https://www.bafin.de"
+regulatory_frameworks: ["MiCA", "BaFin-Act", "DORA"]
+
+xroad_member_code: "DE-BAFIN-001"
+xroad_supervised_entity: "0xa11ce00000000000000000000000000000000001"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "bafin-did-root-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "bafin-rebac-v1"
+  - slot_id: 5
+    plugin_id: "authority.xroad_descriptor"
+    commitment: "bafin-xroad-descriptor-v1"
+  - slot_id: 9
+    plugin_id: "authority.compliance_counter"
+    commitment: "bafin-compliance-counter-ref-v1"
+
+blind_note:
+  is_public: true
+  target_slot: 0
+  value: "0x0"
+  content_type: "xroad_descriptor"
+  payload:
+    member_class: "GOV"
+    member_code: "DE-BAFIN-001"
+    subsystem_code: "ComplianceGateway"
+    endpoint_url_hash: "keccak256(https://xroad.bafin.de/)"
+    cert_fingerprint_sha256: "PLACEHOLDER_REAL_CERT_HASH"
+    protocol_version: "4.0"
+    granted_capabilities:
+      - "can_issue_view_request"
+      - "can_issue_court_order"
+      - "can_trigger_compliance_counter"

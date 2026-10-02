@@ -1,0 +1,31 @@
+# Global DAO ReBAC relations (Namespace 1)
+# Sub-DAOs are recognized as regional members (relation: 5 = sub_dao_member)
+tuples:
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000101"
+    relation: 5 # sub_dao_member
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000102" # Europe DAO
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000101"
+    relation: 5
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000103" # North America DAO
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000101"
+    relation: 5
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000104" # South America DAO
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000101"
+    relation: 5
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000105" # Africa DAO
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000101"
+    relation: 5
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000106" # Central Asia DAO
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000101"
+    relation: 5
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000107" # Asia DAO
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000101"
+    relation: 5
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000108" # Oceania DAO
