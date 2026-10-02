@@ -86,14 +86,17 @@ impl AccountSlot {
 }
 
 /// Deterministically derives a child sub-account, DAO sub-entity, or resource address from a parent address and path string.
+/// Uses circuit-friendly Poseidon hashing (ZK-SNARK / Noir / Groth16 native).
 /// Follows hierarchical derivation (Addresses all the way down).
 ///
-/// Example: `parent: 0x1111...`, `path: "dao/treasury/payroll"` -> Unique Child Address.
+/// Example: `parent: 0x1111...`, `path: "dao/treasury/payroll"` -> Unique Circuit-Safe Child Address.
 #[must_use]
 pub fn derive_child_address(parent: &Address, path: &str) -> Address {
-    let hash = alloy_primitives::keccak256([parent.as_slice(), path.as_bytes()].concat());
-    Address::from_slice(&hash[12..32])
+    let payload = [parent.as_slice(), path.as_bytes()].concat();
+    let addr_bytes = sovereign_crypto::derive_address(sovereign_crypto::HashScheme::Poseidon, &payload);
+    Address::from(addr_bytes)
 }
+
 
 /// Deterministically derives a 16-bit slot ID from an arbitrary dynamic slot name.
 /// Example: `"nexterp.manufacturing.v1"` -> u16 slot index.
@@ -163,6 +166,12 @@ pub struct PolymorphicAccountRegister {
     pub lock_expiry_epoch: u64,
     /// IPLD BLAKE3 Bao Content ID of DID document in cold storage
     pub did_document_cold_cid: B256,
+}
+
+impl Default for PolymorphicAccountRegister {
+    fn default() -> Self {
+        Self::new_with_default_config(Address::ZERO, U256::ZERO)
+    }
 }
 
 impl PolymorphicAccountRegister {
@@ -642,11 +651,18 @@ pub enum AccountEntityKind {
     EnclaveRevm { enclave_type: String },
     /// DAO Treasury Account
     DaoTreasury { dao_name: String },
+    /// Regulatory or X-Road Authority Gateway
+    Authority { body_name: String },
+    /// Collaborative Authority with Multi-Party / Threshold Enforcement
+    CollaborativeAuthority { name: String },
+    /// Long-running verifiable microservice account (e.g. NextERP, NextCloud, Coder)
+    Service { service_name: String },
     /// Low-entropy system function (e.g., Precompile)
     SystemFunction { function_name: String },
     /// Canonical or dynamic namespace account
     NamespaceRegistry { namespace_name: String },
 }
+
 
 /// A node in the universal account graph ("Accounts all the way down").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -670,7 +686,7 @@ impl AccountGraph {
         Self::default()
     }
 
-    /// Loads the genesis configuration, injecting system precompiles and namespaces as active Accounts.
+    /// Loads the genesis configuration, injecting system precompiles, namespaces, and graph accounts into the DAG.
     pub fn load_genesis(&mut self, config: &crate::config::NetworkGenesisConfig) {
         self.network_config = Some(config.clone());
         for sys_acc in &config.system_accounts {
@@ -679,10 +695,83 @@ impl AccountGraph {
                 "NamespaceRegistry" => AccountEntityKind::NamespaceRegistry { namespace_name: sys_acc.name.clone() },
                 _ => AccountEntityKind::SystemFunction { function_name: sys_acc.name.clone() },
             };
-            // Note: register_account now uses self.network_config internally
             self.register_account(sys_acc.address, kind, alloy_primitives::U256::ZERO);
         }
+
+        // Load pre-configured graph accounts (DAOs, Contracts, Git repos, Maintainers)
+        for g_acc in &config.graph_accounts {
+            let kind = match g_acc.entity_kind.as_str() {
+                "DAO" => AccountEntityKind::DaoTreasury { dao_name: g_acc.did.clone().unwrap_or_else(|| "Genesis-DAO".to_string()) },
+                "GitRepo" | "GitRepository" => AccountEntityKind::GitRepository { repo_name: g_acc.did.clone().unwrap_or_else(|| "genesis.git".to_string()) },
+                "Authority" => AccountEntityKind::Authority { body_name: g_acc.did.clone().unwrap_or_else(|| "Authority".to_string()) },
+                "CollaborativeAuthority" => AccountEntityKind::CollaborativeAuthority { name: g_acc.did.clone().unwrap_or_else(|| "AsiaCollab".to_string()) },
+                "Service" => AccountEntityKind::Service { service_name: g_acc.did.clone().unwrap_or_else(|| "Service".to_string()) },
+                "IotDevice" => AccountEntityKind::IotDevice { device_type: "Sensors".to_string() },
+                "Contract" | "SmartContract" => AccountEntityKind::SmartContract,
+                _ => AccountEntityKind::UserProfile,
+            };
+            self.register_account(g_acc.address, kind, g_acc.initial_balance);
+
+            // Pre-mount requested slot commitments
+            if let Some(node) = self.nodes.get_mut(&g_acc.address) {
+                for slot in &g_acc.initial_slots {
+                    let _ = node.register.mount_slot(
+                        slot.slot_id,
+                        slot.commitment,
+                        alloy_primitives::B256::ZERO,
+                        slot.plugin_id.clone(),
+                    );
+                }
+            }
+        }
+
+        // Load pre-deployed smart contracts into graph
+        for c in &config.predeployed_contracts {
+            self.register_account(c.address, AccountEntityKind::SmartContract, c.balance);
+        }
+
+        // Inscribe initial ReBAC tuples into Slot 1 (Zanzibar ReBAC SMT) for relevant accounts
+        for tuple in &config.initial_rebac_tuples {
+            // Find target account corresponding to object_id prefix if it matches an address
+            let target_addr = Address::from_slice(&tuple.object_id.as_slice()[..20]);
+            
+            // Try to parse subject address if subject is an EVM address or did:sovereign:chain:address
+            let subject_addr_opt = if tuple.subject.starts_with("0x") && tuple.subject.len() == 42 {
+                tuple.subject.parse::<Address>().ok()
+            } else if let Some(last_part) = tuple.subject.split(':').last() {
+                if last_part.starts_with("0x") && last_part.len() == 42 {
+                    last_part.parse::<Address>().ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let rel_name = match tuple.relation {
+                1 => "admin".to_string(),
+                2 => "council".to_string(),
+                3 => "auditor".to_string(),
+                5 => "sub_dao_member".to_string(),
+                _ => format!("relation_{}", tuple.relation),
+            };
+
+            if let Some(node) = self.nodes.get_mut(&target_addr) {
+                // Advance or set ReBAC slot commitment
+                let _ = node.register.mount_slot(
+                    1,
+                    tuple.object_id,
+                    alloy_primitives::B256::ZERO,
+                    "core.zanzibar".to_string(),
+                );
+
+                if let Some(sub_addr) = subject_addr_opt {
+                    node.outbound_pointers.push((sub_addr, rel_name));
+                }
+            }
+        }
     }
+
 
     pub fn register_account(&mut self, account: Address, kind: AccountEntityKind, initial_balance: U256) {
         let default_config = crate::config::NetworkGenesisConfig::default();
@@ -733,6 +822,59 @@ impl AccountGraph {
         } else {
             Vec::new()
         }
+    }
+
+    /// Exports the full account graph into a structured JSON representation matching the
+    /// TypeScript `GraphData` interface for the `GraphExplorer` component.
+    #[must_use]
+    pub fn export_graph_json(&self) -> serde_json::Value {
+        let mut nodes_json = Vec::new();
+        let mut edges_json = Vec::new();
+
+        for (addr, node) in &self.nodes {
+            let (label, node_type) = match &node.kind {
+                AccountEntityKind::DaoTreasury { dao_name } => (dao_name.clone(), "global_dao"),
+                AccountEntityKind::GitRepository { repo_name } => (repo_name.clone(), "git_repo"),
+                AccountEntityKind::Authority { body_name } => (body_name.clone(), "xroad_authority"),
+                AccountEntityKind::CollaborativeAuthority { name } => (name.clone(), "collaborative_authority"),
+                AccountEntityKind::Service { service_name } => (service_name.clone(), "service_account"),
+                AccountEntityKind::SmartContract => (format!("Contract {:#x}", addr), "smart_contract"),
+                AccountEntityKind::SystemFunction { function_name } => (function_name.clone(), "system_precompile"),
+                AccountEntityKind::IotDevice { device_type } => (format!("IoT ({})", device_type), "iot_device"),
+                _ => (format!("Account {:#x}", addr), "human_account"),
+            };
+
+            let mut slots_json = Vec::new();
+            for (slot_id, slot) in &node.register.slots {
+                slots_json.push(serde_json::json!({
+                    "slotId": slot_id,
+                    "pluginId": slot.plugin_id,
+                    "commitment": format!("{:#x}", slot.commitment)
+                }));
+            }
+
+            nodes_json.push(serde_json::json!({
+                "id": format!("{:#x}", addr),
+                "label": label,
+                "type": node_type,
+                "address": format!("{:#x}", addr),
+                "balance": format!("{:#x}", node.register.balance),
+                "slots": slots_json
+            }));
+
+            for (target_addr, rel) in &node.outbound_pointers {
+                edges_json.push(serde_json::json!({
+                    "source": format!("{:#x}", addr),
+                    "target": format!("{:#x}", target_addr),
+                    "relation": rel
+                }));
+            }
+        }
+
+        serde_json::json!({
+            "nodes": nodes_json,
+            "edges": edges_json
+        })
     }
 }
 

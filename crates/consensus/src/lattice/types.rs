@@ -12,6 +12,10 @@ pub enum LatticePayload {
     Receive { send_block_hash: B256, amount: U256 },
     /// Asynchronous contract call intent
     ContractCall { target: Address, intent_id: B256, data: Bytes },
+    /// Blind note commitment emission
+    CommitNote { note: super::note::CommitNote },
+    /// Blind note absorption via zero-knowledge nullifier proof
+    AbsorbNote { absorb: super::note::AbsorbNote },
 }
 
 /// A block-lattice block representing a transaction on an individual account chain.
@@ -67,6 +71,24 @@ impl scale::Encode for LatticePayload {
                 intent_id.0.encode_to(dest);
                 data.as_ref().encode_to(dest);
             }
+            LatticePayload::CommitNote { note } => {
+                3u8.encode_to(dest);
+                note.target_account.0.encode_to(dest);
+                note.note_commitment.commitment.0.encode_to(dest);
+                note.note_commitment.gossip_topic.0.encode_to(dest);
+                note.target_slot.encode_to(dest);
+                note.note_commitment.manifold_id.encode_to(dest);
+                note.note_commitment.issuance_epoch.encode_to(dest);
+            }
+            LatticePayload::AbsorbNote { absorb } => {
+                4u8.encode_to(dest);
+                absorb.nullifier.0.encode_to(dest);
+                absorb.target_account.0.encode_to(dest);
+                absorb.target_slot.encode_to(dest);
+                absorb.epoch.encode_to(dest);
+                absorb.zk_proof.as_ref().encode_to(dest);
+                absorb.is_reclaim.encode_to(dest);
+            }
         }
     }
 }
@@ -92,6 +114,50 @@ impl scale::Decode for LatticePayload {
                 let intent_id = B256::from(<[u8; 32]>::decode(input)?);
                 let data = Bytes::from(Vec::<u8>::decode(input)?);
                 Ok(LatticePayload::ContractCall { target, intent_id, data })
+            }
+            3 => {
+                let target_account = Address::from(<[u8; 20]>::decode(input)?);
+                let commitment = B256::from(<[u8; 32]>::decode(input)?);
+                let gossip_topic = B256::from(<[u8; 32]>::decode(input)?);
+                let target_slot = u16::decode(input)?;
+                let manifold_id = u64::decode(input)?;
+                let issuance_epoch = u64::decode(input)?;
+                Ok(LatticePayload::CommitNote {
+                    note: super::note::CommitNote {
+                        target_account,
+                        note_commitment: super::note::NoteCommitment {
+                            commitment,
+                            encrypted_ciphertext: Bytes::new(),
+                            ephemeral_pubkey: Bytes::new(),
+                            gossip_topic,
+                            manifold_id,
+                            issuance_epoch,
+                            relayer_fee_hint: 0,
+                            did_registration_fee: 0,
+                            view_tag: 0,
+                            decay_epoch: issuance_epoch.saturating_add(10),
+                        },
+                        target_slot,
+                    },
+                })
+            }
+            4 => {
+                let nullifier = B256::from(<[u8; 32]>::decode(input)?);
+                let target_account = Address::from(<[u8; 20]>::decode(input)?);
+                let target_slot = u16::decode(input)?;
+                let epoch = u64::decode(input)?;
+                let zk_proof = Bytes::from(Vec::<u8>::decode(input)?);
+                let is_reclaim = bool::decode(input).unwrap_or(false);
+                Ok(LatticePayload::AbsorbNote {
+                    absorb: super::note::AbsorbNote {
+                        nullifier,
+                        zk_proof,
+                        target_account,
+                        target_slot,
+                        epoch,
+                        is_reclaim,
+                    },
+                })
             }
             _ => Err("Invalid LatticePayload variant".into()),
         }

@@ -307,6 +307,84 @@ impl IdentityProvider for NfcTokenAuth {
     }
 }
 
+/// Identifies an eIDAS predicate being proven in zero-knowledge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum EidasPredicateId {
+    /// Proof of EU residency without revealing nationality.
+    EuResident    = 0x01,
+    /// Proof of age >= 18 without revealing exact birthdate.
+    Over18        = 0x02,
+    /// Proof of verified KYC/AML status.
+    KycPassed     = 0x03,
+    /// Proof of registered legal entity status.
+    LegalEntity   = 0x04,
+    /// Proof of Qualified Electronic Signature issuance capability.
+    QesCapable    = 0x05,
+}
+
+/// An eIDAS 2.0 verifiable credential presented as a ZK predicate proof.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EidasCredential {
+    /// The Noir proof bytes.
+    pub predicate_proof: Vec<u8>,
+    /// The predicate being proven.
+    pub predicate_id: EidasPredicateId,
+    /// The LOTL root this proof was generated against (Slot 8 value at issuance epoch).
+    pub lotl_root_at_issuance: alloy_primitives::B256,
+    /// Epoch at which this proof was generated (replay window: +/-2 epochs).
+    pub issuance_epoch: u64,
+    /// The relying account's challenge nonce this proof is bound to.
+    pub challenge_nonce: alloy_primitives::B256,
+    /// PID domain nullifier (optional; only included when sybil resistance is required).
+    pub pid_nullifier: Option<alloy_primitives::B256>,
+    /// QSCD key signature over the proof commitment.
+    pub qscd_signature: Vec<u8>,
+}
+
+/// eIDAS 2.0 Identity Provider implementing the core IdentityProvider trait.
+#[derive(Debug, Clone, Default)]
+pub struct EidasIdentityProvider {
+    /// Current LOTL root (from governance Slot 8).
+    pub lotl_root: alloy_primitives::B256,
+    /// Active consensus epoch.
+    pub current_epoch: u64,
+}
+
+impl IdentityProvider for EidasIdentityProvider {
+    type Credentials = EidasCredential;
+
+    fn verify_identity(&self, cred: &Self::Credentials) -> Result<InternalIdentityMapping, &'static str> {
+        // 1. Verify LOTL root matches current Slot 8 value
+        if cred.lotl_root_at_issuance != self.lotl_root {
+            return Err("LOTL root mismatch: QTSP may have been revoked or root updated (S-05)");
+        }
+        // 2. Verify epoch window (replay prevention: proof is stale after 2 epochs, S-01)
+        if self.current_epoch.saturating_sub(cred.issuance_epoch) > 2 {
+            return Err("eIDAS proof expired: re-present within 2 epochs (S-01)");
+        }
+        // 3. Verify mock or cryptographic proof bytes non-empty
+        if cred.predicate_proof.is_empty() {
+            return Err("eIDAS predicate proof is empty");
+        }
+        // 4. Verify QSCD signature present
+        if cred.qscd_signature.is_empty() {
+            return Err("QSCD hardware key signature is required");
+        }
+
+        let user_id = if let Some(nullifier) = cred.pid_nullifier {
+            format!("eidas:{:#x}", nullifier)
+        } else {
+            format!("eidas:predicate_{:?}", cred.predicate_id)
+        };
+
+        Ok(InternalIdentityMapping {
+            internal_user_id: user_id,
+            identity_server: "eIDAS_LOTL_Slot8".to_string(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

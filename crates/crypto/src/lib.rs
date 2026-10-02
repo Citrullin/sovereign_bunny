@@ -148,15 +148,17 @@ impl CryptoProfile {
     };
 
     /// IoT / constrained devices. Falcon has the smallest PQ signatures (~690 bytes
-    /// at NIST Level I). Keccak for hardware accelerator compatibility.
+    /// at NIST Level I). Poseidon for ZK-circuit-friendly state roots — keccak is
+    /// ~500x more expensive in Noir circuits than Poseidon, which is impractical for
+    /// IoT devices proving slot transitions.
     /// Verkle for smallest state proofs over the wire.
     /// Tradeoff: Falcon key generation uses floating-point (harder to constant-time).
     pub const IOT_COMPACT: Self = Self {
         name: "iot_compact",
         signature: SignatureScheme::Falcon,
-        hash: HashScheme::Keccak256,
+        hash: HashScheme::Poseidon,
         pairing_curve: PairingCurve::Bls12381,
-        state_tree: StateTreeScheme::Verkle,
+        state_tree: StateTreeScheme::PoseidonMerkle,
     };
 
     /// Maximum quantum hardening. SLH-DSA is hash-based (no lattice assumptions),
@@ -180,6 +182,27 @@ impl CryptoProfile {
         state_tree: StateTreeScheme::MinaSnarkState,
     };
 
+    /// Noir-native ZK profile. All primitives are circuit-friendly for BN254 UltraHonk.
+    ///
+    /// - **BabyJubjub**: defined over BN254’s scalar field — verifying a BabyJubjub signature
+    ///   in a Noir BN254 circuit costs ~4,000 constraints vs ~50,000 for secp256k1 (~12× cheaper).
+    /// - **Poseidon**: ~250–300 constraints per call vs ~150,000 for keccak (~500× cheaper).
+    /// - **BN254**: native Noir pairing curve — no field conversion overhead.
+    /// - **PoseidonMerkle**: state roots directly provable in Noir circuits.
+    ///
+    /// Use this for DAO voting proofs, note absorption proofs, slot transition proofs —
+    /// anything that runs Noir on user devices (mobile/IoT/WASM).
+    ///
+    /// Tradeoff: BabyJubjub is not quantum-resistant. Requires Noir-side key derivation.
+    /// Not Ethereum-wallet-compatible (separate spending key from secp256k1 viewing key).
+    pub const NOIR_NATIVE: Self = Self {
+        name: "noir_native",
+        signature: SignatureScheme::BabyJubjub,
+        hash: HashScheme::Poseidon,
+        pairing_curve: PairingCurve::Bn254,
+        state_tree: StateTreeScheme::PoseidonMerkle,
+    };
+
     /// Parses a profile name string into a `CryptoProfile`.
     ///
     /// # Errors
@@ -192,8 +215,27 @@ impl CryptoProfile {
             "iot_compact" | "falcon" => Ok(Self::IOT_COMPACT),
             "quantum_hardened" | "slhdsa" => Ok(Self::QUANTUM_HARDENED),
             "mina_recursive" | "mina" => Ok(Self::MINA_RECURSIVE),
+            "noir_native" | "noir" | "babyjubjub" => Ok(Self::NOIR_NATIVE),
             _ => Err("Unsupported crypto profile name"),
         }
+    }
+
+    /// Returns `true` if this profile’s hash and signature schemes are cheap to prove
+    /// inside a Noir UltraHonk circuit (BN254 field arithmetic, no bitwise hash ops).
+    ///
+    /// Profiles using `Keccak256` or `Sha256` are **not** circuit-friendly — they cost
+    /// 150,000–200,000 constraints per hash call, making inner-loop ZK proofs impractical.
+    /// Poseidon costs ~250–300 constraints per call.
+    #[must_use]
+    pub fn is_noir_circuit_friendly(&self) -> bool {
+        matches!(self.hash, HashScheme::Poseidon)
+            && matches!(self.pairing_curve, PairingCurve::Bn254 | PairingCurve::BabyBear)
+    }
+
+    /// Returns `true` if the signature scheme provides post-quantum cryptographic security.
+    #[must_use]
+    pub fn is_quantum_resistant(&self) -> bool {
+        self.signature.is_post_quantum()
     }
 }
 
@@ -502,6 +544,128 @@ pub fn make_mock_kzg_proof() -> Vec<u8> {
     bytes
 }
 
+/// Maps an arbitrary message slice to a point in G1Affine using hash-to-curve scalar multiplication.
+pub fn hash_to_g1(message: &[u8]) -> ark_bn254::G1Affine {
+    use ark_bn254::{Fr, G1Affine};
+    use ark_ec::AffineRepr;
+    use ark_ff::PrimeField;
+
+    let h = hash(HashScheme::Keccak256, message);
+    let scalar = Fr::from_le_bytes_mod_order(&h);
+    (G1Affine::generator() * scalar).into()
+}
+
+/// Verifies an aggregated BLS threshold signature over BN254.
+/// Enforces: e(sig, G2_generator) == e(H(msg), aggregated_pk)
+pub fn verify_bls_threshold_signature(
+    signature_bytes: &[u8],
+    message: &[u8],
+    aggregated_pk_bytes: &[u8],
+) -> Result<(), &'static str> {
+    use ark_bn254::{Bn254, G1Affine, G2Affine};
+    use ark_ec::pairing::Pairing;
+    use ark_ec::AffineRepr;
+    use ark_serialize::CanonicalDeserialize;
+
+    if signature_bytes.len() != 32 && signature_bytes.len() != 64 {
+        return Err("Invalid BLS signature byte length for BN254");
+    }
+    if aggregated_pk_bytes.len() != 64 && aggregated_pk_bytes.len() != 128 {
+        return Err("Invalid aggregated public key byte length for BN254 G2");
+    }
+
+    let sig = G1Affine::deserialize_compressed(signature_bytes)
+        .map_err(|_| "Failed to deserialize G1 BLS signature")?;
+    let agg_pk = G2Affine::deserialize_compressed(aggregated_pk_bytes)
+        .map_err(|_| "Failed to deserialize G2 aggregated public key")?;
+
+    let h_msg = hash_to_g1(message);
+    let g2_gen = G2Affine::generator();
+
+    let pairing_left = Bn254::pairing(sig, g2_gen);
+    let pairing_right = Bn254::pairing(h_msg, agg_pk);
+
+    if pairing_left == pairing_right {
+        Ok(())
+    } else {
+        Err("BLS threshold signature pairing verification failed: e(sig, g2) != e(H(m), agg_pk)")
+    }
+}
+
+/// Signs a message with a BN254 Fr secret key scalar producing a compressed G1 signature.
+pub fn bls_sign_message(sk_bytes: &[u8; 32], message: &[u8]) -> Vec<u8> {
+    use ark_bn254::{Fr, G1Affine};
+    use ark_ff::PrimeField;
+    use ark_serialize::CanonicalSerialize;
+
+    let sk = Fr::from_le_bytes_mod_order(sk_bytes);
+    let h_msg = hash_to_g1(message);
+    let sig: G1Affine = (h_msg * sk).into();
+
+    let mut out = Vec::new();
+    sig.serialize_compressed(&mut out).ok();
+    out
+}
+
+/// Derives a compressed G2 public key from a BN254 Fr secret key scalar.
+pub fn bls_derive_pk_g2(sk_bytes: &[u8; 32]) -> Vec<u8> {
+    use ark_bn254::{Fr, G2Affine};
+    use ark_ec::AffineRepr;
+    use ark_ff::PrimeField;
+    use ark_serialize::CanonicalSerialize;
+
+    let sk = Fr::from_le_bytes_mod_order(sk_bytes);
+    let pk: G2Affine = (G2Affine::generator() * sk).into();
+
+    let mut out = Vec::new();
+    pk.serialize_compressed(&mut out).ok();
+    out
+}
+
+/// Aggregates multiple G1 BLS signatures into a single compressed G1 signature.
+pub fn bls_aggregate_signatures(sigs: &[&[u8]]) -> Result<Vec<u8>, &'static str> {
+    use ark_bn254::G1Affine;
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+
+    if sigs.is_empty() {
+        return Err("Cannot aggregate empty signatures");
+    }
+
+    let mut agg = ark_bn254::G1Projective::default();
+    for s in sigs {
+        let pt = G1Affine::deserialize_compressed(*s)
+            .map_err(|_| "Invalid G1 signature in aggregation")?;
+        agg += pt;
+    }
+
+    let agg_affine: G1Affine = agg.into();
+    let mut out = Vec::new();
+    agg_affine.serialize_compressed(&mut out).ok();
+    Ok(out)
+}
+
+/// Aggregates multiple G2 BLS public keys into a single compressed G2 public key.
+pub fn bls_aggregate_pks_g2(pks: &[&[u8]]) -> Result<Vec<u8>, &'static str> {
+    use ark_bn254::G2Affine;
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+
+    if pks.is_empty() {
+        return Err("Cannot aggregate empty public keys");
+    }
+
+    let mut agg = ark_bn254::G2Projective::default();
+    for p in pks {
+        let pt = G2Affine::deserialize_compressed(*p)
+            .map_err(|_| "Invalid G2 public key in aggregation")?;
+        agg += pt;
+    }
+
+    let agg_affine: G2Affine = agg.into();
+    let mut out = Vec::new();
+    agg_affine.serialize_compressed(&mut out).ok();
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,5 +710,43 @@ mod tests {
             bad_proof[0] ^= 0xff; // corrupt proof element
             assert!(verify_stateless_proof(&bad_proof).is_err());
         }
+    }
+
+    #[test]
+    fn test_bls_threshold_signature_and_aggregation() {
+        let sk1 = [1u8; 32];
+        let sk2 = [2u8; 32];
+        let sk3 = [3u8; 32];
+
+        let msg = b"epoch_finality_marker_epoch_42";
+
+        let sig1 = bls_sign_message(&sk1, msg);
+        let sig2 = bls_sign_message(&sk2, msg);
+        let sig3 = bls_sign_message(&sk3, msg);
+
+        let pk1 = bls_derive_pk_g2(&sk1);
+        let pk2 = bls_derive_pk_g2(&sk2);
+        let pk3 = bls_derive_pk_g2(&sk3);
+
+        // Single signature verification
+        assert!(verify_bls_threshold_signature(&sig1, msg, &pk1).is_ok());
+
+        // 2-of-3 aggregation
+        let agg_sig_2of3 = bls_aggregate_signatures(&[&sig1, &sig2]).unwrap();
+        let agg_pk_2of3 = bls_aggregate_pks_g2(&[&pk1, &pk2]).unwrap();
+        assert!(verify_bls_threshold_signature(&agg_sig_2of3, msg, &agg_pk_2of3).is_ok());
+
+        // Corrupted aggregated signature should fail
+        let mut corrupted_sig = agg_sig_2of3.clone();
+        corrupted_sig[10] ^= 0xff;
+        assert!(verify_bls_threshold_signature(&corrupted_sig, msg, &agg_pk_2of3).is_err());
+
+        // Wrong message should fail
+        assert!(verify_bls_threshold_signature(&agg_sig_2of3, b"wrong_msg", &agg_pk_2of3).is_err());
+
+        // 3-of-3 aggregation
+        let agg_sig_3of3 = bls_aggregate_signatures(&[&sig1, &sig2, &sig3]).unwrap();
+        let agg_pk_3of3 = bls_aggregate_pks_g2(&[&pk1, &pk2, &pk3]).unwrap();
+        assert!(verify_bls_threshold_signature(&agg_sig_3of3, msg, &agg_pk_3of3).is_ok());
     }
 }
