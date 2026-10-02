@@ -238,6 +238,68 @@ impl ZanzibarGraphEngine {
                 rules: git_rules,
             },
         );
+
+        // 4. oidc_service: admin => member => access
+        let ns_oidc = derive_namespace_id("oidc_service");
+        let rel_oidc_admin = derive_relation_id("admin");
+        let rel_oidc_member = derive_relation_id("member");
+        let rel_oidc_access = derive_relation_id("access");
+
+        let mut oidc_rules = HashMap::new();
+        oidc_rules.insert(rel_oidc_admin, RewriteRule::This);
+        oidc_rules.insert(
+            rel_oidc_member,
+            RewriteRule::Union(vec![
+                RewriteRule::This,
+                RewriteRule::ComputedSubjectSet { relation_id: rel_oidc_admin },
+            ]),
+        );
+        oidc_rules.insert(
+            rel_oidc_access,
+            RewriteRule::Union(vec![
+                RewriteRule::This,
+                RewriteRule::ComputedSubjectSet { relation_id: rel_oidc_member },
+            ]),
+        );
+        self.schemas.insert(
+            ns_oidc,
+            NamespaceSchema {
+                namespace_id: ns_oidc,
+                name: "oidc_service".to_string(),
+                rules: oidc_rules,
+            },
+        );
+
+        // 5. authority: supervisor_of => can_issue_view_request
+        let ns_authority = derive_namespace_id("authority");
+        let rel_supervisor = derive_relation_id("supervisor_of");
+        let rel_issue_view = derive_relation_id("can_issue_view_request");
+
+        let mut auth_rules = HashMap::new();
+        auth_rules.insert(rel_supervisor, RewriteRule::This);
+        auth_rules.insert(
+            rel_issue_view,
+            RewriteRule::Union(vec![
+                RewriteRule::This,
+                RewriteRule::ComputedSubjectSet { relation_id: rel_supervisor },
+            ]),
+        );
+        self.schemas.insert(
+            ns_authority,
+            NamespaceSchema {
+                namespace_id: ns_authority,
+                name: "authority".to_string(),
+                rules: auth_rules,
+            },
+        );
+    }
+
+    /// Checks if a user has access to a registered OIDC client service (e.g. NextERP, Nextcloud, Gitea)
+    /// under the canonical `oidc_service` namespace.
+    #[must_use]
+    pub fn check_oidc_service_access(&self, client_id: &str, user: Address) -> bool {
+        let obj = B256::from_slice(blake3::hash(client_id.as_bytes()).as_bytes());
+        self.check_named("oidc_service", obj, "access", user, 5)
     }
 
     /// Registers a new on-chain dynamic namespace schema.
@@ -523,5 +585,44 @@ mod tests {
 
         let rebac_root = engine.compute_rebac_root();
         assert_ne!(rebac_root, B256::ZERO);
+    }
+
+    #[test]
+    fn test_zanzibar_cycle_and_depth_limits() {
+        let mut engine = ZanzibarGraphEngine::new();
+        let obj_a = B256::repeat_byte(0x01);
+        let obj_b = B256::repeat_byte(0x02);
+        let alice = Address::repeat_byte(0xaa);
+
+        let ns = derive_namespace_id("loop_ns");
+        let rel_member = derive_relation_id("member");
+
+        // Create a direct cycle: Group A has member Group B, Group B has member Group A
+        engine.add_tuple(ZanzibarTuple {
+            namespace_id: ns,
+            object: obj_a,
+            relation_id: rel_member,
+            subject: ZanzibarSubject::Set {
+                namespace_id: ns,
+                object: obj_b,
+                relation_id: rel_member,
+            },
+        });
+        engine.add_tuple(ZanzibarTuple {
+            namespace_id: ns,
+            object: obj_b,
+            relation_id: rel_member,
+            subject: ZanzibarSubject::Set {
+                namespace_id: ns,
+                object: obj_a,
+                relation_id: rel_member,
+            },
+        });
+
+        // Visited set prevents infinite recursion/stack overflow on cycle:
+        assert!(!engine.check(ns, obj_a, rel_member, alice, 32));
+
+        // Depth limit 0 immediately returns false:
+        assert!(!engine.check(ns, obj_a, rel_member, alice, 0));
     }
 }

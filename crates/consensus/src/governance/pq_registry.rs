@@ -15,6 +15,8 @@ pub enum KeyTier {
     QuantumReady,
     /// Classical keys disabled; only Post-Quantum signatures accepted
     QuantumOnly,
+    /// Post-Quantum ZK wire stripped; only succinct ~200B PqWitnessEnvelope proofs accepted on-ledger
+    QuantumWireStripped,
 }
 
 impl KeyTier {
@@ -23,6 +25,7 @@ impl KeyTier {
         match s.to_ascii_lowercase().as_str() {
             "quantumready" | "ready" => KeyTier::QuantumReady,
             "quantumonly" | "only" => KeyTier::QuantumOnly,
+            "quantumwirestripped" | "wirestripped" | "pq_zk" => KeyTier::QuantumWireStripped,
             _ => KeyTier::Classical,
         }
     }
@@ -33,6 +36,7 @@ impl KeyTier {
             KeyTier::Classical => "Classical",
             KeyTier::QuantumReady => "QuantumReady",
             KeyTier::QuantumOnly => "QuantumOnly",
+            KeyTier::QuantumWireStripped => "QuantumWireStripped",
         }
     }
 }

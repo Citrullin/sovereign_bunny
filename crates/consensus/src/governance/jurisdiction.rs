@@ -78,7 +78,8 @@ pub struct DynamicConfigPatch {
     pub default_crypto_profile: Option<String>,
     pub profile_switch_block_height: Option<u64>,
     pub next_crypto_profile: Option<String>,
-    pub saga_intent_timeout_seconds: Option<u64>,
+    /// Saga intent timeout override in epochs (epoch-based, not wall-clock seconds).
+    pub saga_intent_timeout_epochs: Option<u64>,
     pub committee_threshold: Option<f64>,
     pub connectivity_decay_penalty: Option<f64>,
 }

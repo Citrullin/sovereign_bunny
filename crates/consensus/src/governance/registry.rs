@@ -67,6 +67,8 @@ pub struct AccountFrontier {
     pub paused_context: Option<Vec<u8>>,
     /// Size of the paused context snapshot.
     pub snapshot_size: usize,
+    /// Account execution and configuration flags.
+    pub account_flags: u64,
     /// Cached compliance vector snapshot refreshed at epoch boundaries.
     pub cached_compliance: Option<crate::compliance_vector::ComplianceVector>,
     /// Progressive merit rank tier of this account.
@@ -217,6 +219,8 @@ pub struct ValidatorRegistry {
     /// Prevents a replayed relay packet from minting tokens or triggering state
     /// mutations a second time. Populated in `relay_mesh::extract_message`.
     pub processed_manifold_messages: HashSet<B256>,
+    /// Sparse Merkle Tree accumulator for blind note nullifiers, providing verifiable double-spend prevention.
+    pub nullifier_smt: crate::lattice::nullifier_smt::NullifierSmt,
     /// Epoch at which each send block was originally submitted, keyed by send-block hash.
     ///
     /// Used by `process_reclaim_sends` to detect send blocks that have gone unclaimed
@@ -267,6 +271,7 @@ impl ValidatorRegistry {
             claimed_sends: HashSet::new(),
             used_intent_ids: HashSet::new(),
             processed_manifold_messages: HashSet::new(),
+            nullifier_smt: crate::lattice::nullifier_smt::NullifierSmt::new(),
             send_block_epochs: HashMap::new(),
             legacy_allowed: HashSet::new(),
             reclaim_timeout_epochs: 10,
@@ -510,8 +515,91 @@ impl ValidatorRegistry {
                                     frontier.latest_hash = genesis_hash;
                                     self.update_frontier(addr, frontier);
                                     self.legacy_allowed.insert(addr);
+
+                                    // Initialize default on-chain DID identity for genesis allocated accounts
+                                    let did_uri = format!("did:sovereign:{}:{addr:#x}", self.chain_id);
+                                    let mut doc = sovereign_identity::did::SovereignDidDocument::wrap_foreign_key(self.chain_id, addr.as_slice());
+                                    doc.did_uri = did_uri.clone();
+                                    self.address_to_did.insert(addr, did_uri.clone());
+                                    self.identities.insert(did_uri.clone(), RegisteredIdentity {
+                                        did: did_uri,
+                                        doc,
+                                        registered_at: 0,
+                                    });
                                 }
                             }
+
+                            // Load genesis_network.json if present alongside genesis.json
+                            let network_path = path.with_file_name("genesis_network.json");
+                            if network_path.exists() {
+                                if let Ok(net_content) = std::fs::read_to_string(&network_path) {
+                                    if let Ok(net_cfg) = serde_json::from_str::<crate::config::NetworkGenesisConfig>(&net_content) {
+                                        // Inscribe initial ReBAC tuples into the Zanzibar engine
+                                        for tuple in &net_cfg.initial_rebac_tuples {
+                                            // namespace/relation are u32 in JSON for readability; ZanzibarTuple stores u16 compact IDs.
+                                            // If the genesis supplies a raw u32 that fits in u16 use it directly;
+                                            // otherwise derive a u16 namespace via the canonical derive_namespace_id path.
+                                            let ns_id: u16 = if tuple.namespace <= u16::MAX as u32 {
+                                                tuple.namespace as u16
+                                            } else {
+                                                crate::governance::zanzibar::derive_namespace_id(&tuple.namespace.to_string())
+                                            };
+                                            let rel_id: u16 = if tuple.relation <= u16::MAX as u32 {
+                                                tuple.relation as u16
+                                            } else {
+                                                crate::governance::zanzibar::derive_relation_id(&tuple.relation.to_string())
+                                            };
+                                            // Subject is a human-readable string from genesis JSON.
+                                            // Parse as an EVM address if prefixed with 0x; otherwise derive
+                                            // a synthetic address from its keccak hash for ZanzibarSubject::User.
+                                            let subject = if tuple.subject.starts_with("0x") || tuple.subject.starts_with("0X") {
+                                                let clean = tuple.subject.trim_start_matches("0x").trim_start_matches("0X");
+                                                alloy_primitives::hex::decode(clean)
+                                                    .ok()
+                                                    .filter(|b| b.len() == 20)
+                                                    .map(|b| Address::from_slice(&b))
+                                                    .unwrap_or_else(|| {
+                                                        let h = alloy_primitives::keccak256(tuple.subject.as_bytes());
+                                                        Address::from_slice(&h[12..])
+                                                    })
+                                            } else {
+                                                // DID or username: derive address from keccak of the string
+                                                let h = alloy_primitives::keccak256(tuple.subject.as_bytes());
+                                                Address::from_slice(&h[12..])
+                                            };
+                                            self.zanzibar_engine.add_tuple(crate::governance::zanzibar::ZanzibarTuple {
+                                                namespace_id: ns_id,
+                                                object: tuple.object_id,
+                                                relation_id: rel_id,
+                                                subject: crate::governance::zanzibar::ZanzibarSubject::User(subject),
+                                            });
+                                        }
+
+                                        // Register pre-deployed contracts
+                                        for contract in &net_cfg.predeployed_contracts {
+                                            self.account_balances.insert(contract.address, contract.balance);
+                                            self.legacy_allowed.insert(contract.address);
+                                        }
+
+                                        // Register initial blind note commitments so they can be absorbed immediately.
+                                        // Genesis notes are issued at epoch 0 with no relayer fee.
+                                        for note in &net_cfg.genesis_blind_notes {
+                                            let car = self.get_or_create_register(note.target_account);
+                                            if car.slots.contains_key(&note.target_slot) {
+                                                let _ = car.transition_slot(note.target_slot, note.commitment, 0);
+                                            } else {
+                                                let _ = car.mount_slot(
+                                                    note.target_slot,
+                                                    note.commitment,
+                                                    alloy_primitives::B256::ZERO,
+                                                    format!("genesis.note.slot_{}", note.target_slot),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             break;
                         }
                     }
@@ -658,6 +746,7 @@ impl ValidatorRegistry {
             locked_at: 0,
             paused_context: None,
             snapshot_size: 0,
+            account_flags: 0,
             cached_compliance: None,
             merit_rank: crate::jurisdiction::MeritRank::Rank0,
             epochs_at_current_rank: 0,
@@ -976,6 +1065,20 @@ impl ValidatorRegistry {
                 registered_at: epoch,
             });
         }
+        if !doc.ml_dsa_pubkey.is_empty() {
+            self.pq_keys.insert(addr, doc.ml_dsa_pubkey.clone());
+            self.did_key_tier.insert(addr, crate::pq_registry::KeyTier::QuantumReady);
+        } else if !doc.xmss_pubkey.is_empty() {
+            self.pq_keys.insert(addr, doc.xmss_pubkey.clone());
+            self.did_key_tier.insert(addr, crate::pq_registry::KeyTier::QuantumReady);
+        } else if !doc.slh_dsa_pubkey.is_empty() {
+            self.pq_keys.insert(addr, doc.slh_dsa_pubkey.clone());
+            self.did_key_tier.insert(addr, crate::pq_registry::KeyTier::QuantumReady);
+        } else if !doc.falcon_pubkey.is_empty() {
+            self.pq_keys.insert(addr, doc.falcon_pubkey.clone());
+            self.did_key_tier.insert(addr, crate::pq_registry::KeyTier::QuantumReady);
+        }
+
         self.identities.insert(sovereign_addr_did.clone(), RegisteredIdentity {
             did: sovereign_addr_did,
             doc,
@@ -992,14 +1095,7 @@ impl ValidatorRegistry {
         }
     }
 
-    /// Mock validator insertion helper for testing.
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn add_mock_validator(&mut self, did: String, address: Address, peer_key: [u8; 32]) {
-        self.peer_keys.insert(did.clone(), peer_key);
-        self.address_to_did.insert(address, did.clone());
-        self.validators.insert(did.clone(), ValidatorType::HardwareTEE);
-        self.reputation.insert(did, 1.0);
-    }
+
 }
 
 use std::sync::{OnceLock, RwLock};

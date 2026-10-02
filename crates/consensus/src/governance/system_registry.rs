@@ -50,6 +50,24 @@ pub const SYSTEM_CMS: Address = address!("00000000000000000000000000000000000000
 /// Hook for Relational SQL Query & Table Execution against DAO & Contract Accounts (0x00...0055)
 pub const SYSTEM_SQL_ENGINE: Address = address!("0000000000000000000000000000000000000055");
 
+/// Hook for Blind Note Commit & Absorb Lifecycle (0x00...0065)
+pub const SYSTEM_NOTE_REGISTRY: Address = address!("0000000000000000000000000000000000000065");
+
+/// Hook for CAR Slot Resolution Precompile (0x00...0060)
+pub const PRECOMPILE_RESOLVE_SLOT: Address = address!("0000000000000000000000000000000000000060");
+
+/// Hook for Zanzibar ReBAC Verification Precompile (0x00...0061)
+pub const PRECOMPILE_VERIFY_REBAC: Address = address!("0000000000000000000000000000000000000061");
+
+/// Hook for Verifiable SQL Digest Precompile (0x00...0062)
+pub const PRECOMPILE_VERIFY_SQL_RESULT: Address = address!("0000000000000000000000000000000000000062");
+
+/// Hook for Git VCS HEAD Verification Precompile (0x00...0063)
+pub const PRECOMPILE_VERIFY_GIT_HEAD: Address = address!("0000000000000000000000000000000000000063");
+
+/// Hook for Universal Multi-Curve Verification Precompile (0x00...0064)
+pub const PRECOMPILE_UNIVERSAL_MULTI_CURVE: Address = address!("0000000000000000000000000000000000000064");
+
 /// Hook for Global Epoch Coordinator & Meta-Consensus Cuts (0x00...00e0)
 pub const SYSTEM_EPOCH_COORDINATOR: Address = address!("00000000000000000000000000000000000000e0");
 
@@ -96,7 +114,13 @@ pub fn is_system_address(addr: &Address) -> bool {
         || addr == &SYSTEM_SIGNAL_REGISTRY
         || addr == &SYSTEM_CMS
         || addr == &SYSTEM_SQL_ENGINE
+        || addr == &SYSTEM_NOTE_REGISTRY
         || addr == &SYSTEM_EPOCH_COORDINATOR
+        || addr == &PRECOMPILE_RESOLVE_SLOT
+        || addr == &PRECOMPILE_VERIFY_REBAC
+        || addr == &PRECOMPILE_VERIFY_SQL_RESULT
+        || addr == &PRECOMPILE_VERIFY_GIT_HEAD
+        || addr == &PRECOMPILE_UNIVERSAL_MULTI_CURVE
         || virtual_chain_id(addr).is_some()
 }
 
@@ -242,6 +266,32 @@ pub enum SystemAction {
         target_contract: Address,
         /// SQL statement (SELECT, INSERT, CREATE TABLE, etc.)
         sql_query: String,
+    },
+    /// Commit blind note targeting SYSTEM_NOTE_REGISTRY (0x65)
+    CommitNote {
+        /// Domain-separated blind note commitment
+        note_commitment: crate::lattice::note::NoteCommitment,
+        /// Target account address
+        target_account: Address,
+        /// Target slot
+        target_slot: u16,
+    },
+    /// Absorb blind note targeting SYSTEM_NOTE_REGISTRY (0x65)
+    AbsorbNote {
+        /// Consumed nullifier
+        nullifier: B256,
+        /// ZK proof bytes
+        zk_proof: Vec<u8>,
+        /// Target account address absorbing the state mutation
+        target_account: Address,
+        /// Target slot
+        target_slot: u16,
+        /// Epoch
+        epoch: u64,
+        /// Relayer address if submitted by relayer
+        relayer_address: Option<Address>,
+        /// Relayer fee claimed
+        relayer_fee: Option<U256>,
     },
 }
 
@@ -397,6 +447,63 @@ impl SystemAction {
                 target_contract,
                 sql_query,
             })
+        } else if target == &SYSTEM_NOTE_REGISTRY {
+            // Tag 0x01 = CommitNote, Tag 0x02 = AbsorbNote (CBOR-encoded or tagged)
+            if data.is_empty() {
+                return None;
+            }
+            if data[0] == 0x01 {
+                // [0x01 || target_account: 20B || target_slot: 2B || cbor(NoteCommitment)]
+                if data.len() < 1 + 20 + 2 {
+                    return None;
+                }
+                let target_account = Address::from_slice(&data[1..21]);
+                let target_slot = u16::from_be_bytes([data[21], data[22]]);
+                let note_commitment: crate::lattice::note::NoteCommitment = serde_json::from_slice(&data[23..]).ok()?;
+                Some(SystemAction::CommitNote {
+                    note_commitment,
+                    target_account,
+                    target_slot,
+                })
+            } else if data[0] == 0x02 {
+                // [0x02 || nullifier: 32B || target_account: 20B || target_slot: 2B || epoch: 8B || proof_len: 4B || proof || relayer_flag: 1B [|| relayer_addr: 20B || relayer_fee: 32B]]
+                if data.len() < 1 + 32 + 20 + 2 + 8 + 4 {
+                    return None;
+                }
+                let nullifier = B256::from_slice(&data[1..33]);
+                let target_account = Address::from_slice(&data[33..53]);
+                let target_slot = u16::from_be_bytes([data[53], data[54]]);
+                let epoch = u64::from_be_bytes(data[55..63].try_into().ok()?);
+                let proof_len = u32::from_be_bytes(data[63..67].try_into().ok()?) as usize;
+                if data.len() < 67 + proof_len {
+                    return None;
+                }
+                let zk_proof = data[67..67 + proof_len].to_vec();
+                let mut offset = 67 + proof_len;
+                let (relayer_address, relayer_fee) = if offset < data.len() && data[offset] == 1 {
+                    offset += 1;
+                    if data.len() >= offset + 20 + 32 {
+                        let r_addr = Address::from_slice(&data[offset..offset + 20]);
+                        let r_fee = U256::from_be_slice(&data[offset + 20..offset + 52]);
+                        (Some(r_addr), Some(r_fee))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                };
+                Some(SystemAction::AbsorbNote {
+                    nullifier,
+                    zk_proof,
+                    target_account,
+                    target_slot,
+                    epoch,
+                    relayer_address,
+                    relayer_fee,
+                })
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -490,6 +597,33 @@ impl SystemAction {
                 data.extend_from_slice(&(provider_did.len() as u32).to_be_bytes());
                 data.extend_from_slice(provider_did.as_bytes());
                 data.extend_from_slice(bao_slice_proof);
+                data
+            }
+            SystemAction::CommitNote { note_commitment, target_account, target_slot } => {
+                let mut data = Vec::new();
+                data.push(0x01);
+                data.extend_from_slice(target_account.as_slice());
+                data.extend_from_slice(&target_slot.to_be_bytes());
+                let json_bytes = serde_json::to_vec(note_commitment).unwrap_or_default();
+                data.extend_from_slice(&json_bytes);
+                data
+            }
+            SystemAction::AbsorbNote { nullifier, zk_proof, target_account, target_slot, epoch, relayer_address, relayer_fee } => {
+                let mut data = Vec::new();
+                data.push(0x02);
+                data.extend_from_slice(nullifier.as_slice());
+                data.extend_from_slice(target_account.as_slice());
+                data.extend_from_slice(&target_slot.to_be_bytes());
+                data.extend_from_slice(&epoch.to_be_bytes());
+                data.extend_from_slice(&(zk_proof.len() as u32).to_be_bytes());
+                data.extend_from_slice(zk_proof);
+                if let (Some(r_addr), Some(r_fee)) = (relayer_address, relayer_fee) {
+                    data.push(0x01);
+                    data.extend_from_slice(r_addr.as_slice());
+                    data.extend_from_slice(&r_fee.to_be_bytes::<32>());
+                } else {
+                    data.push(0x00);
+                }
                 data
             }
         }
