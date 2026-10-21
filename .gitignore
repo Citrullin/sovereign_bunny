@@ -41,3 +41,27 @@ dist/
 *.env
 *.local
 
+# Remote host execution, sync, and cluster deployment scripts
+scripts/remote_exec.sh
+scripts/sync_to_remote.sh
+scripts/redeploy_remote_dev.sh
+scripts/remote_wallet_deploy.sh
+scripts/build_and_deploy_wallet.sh
+scripts/run_remote_*.sh
+scripts/check_*.sh
+scripts/verify_remote_cluster.sh
+scripts/test_*.sh
+scripts/restart_cluster.sh
+scripts/deploy_remote_cluster.sh
+scripts/redeploy_cluster.sh
+scripts/cleanup_pods.sh
+scripts/wait_pods_ready.sh
+scripts/sync_argocd.sh
+scripts/push_branch.sh
+scripts/push_to_gitea.sh
+scripts/bunny_cluster_manifest.yaml
+scripts/generate_multicluster_manifests.sh
+scripts/scaffold_helm_migration.py
+scripts/*.env
+scripts/cluster.env*
+
