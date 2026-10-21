@@ -181,6 +181,284 @@ impl SagaActor {
     }
 }
 
+// =========================================================================
+// DECLARATIVE LATTICE SAGA PROTOCOL (Intent-Based System)
+// =========================================================================
+
+/// Canonical slot ID for Lattice Saga Locks
+pub const SLOT_SAGA_LOCK: u16 = 7;
+
+/// Discrete status of a declarative Lattice Saga Intent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SagaStatus {
+    Pending,
+    Simulating,
+    Staged,
+    Committed,
+    RolledBack,
+}
+
+/// A predicate that must hold over a target account's slot before a saga can execute.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotPredicate {
+    pub account: Address,
+    pub slot_id: u16,
+    pub predicate_type: PredicateType,
+    pub expected_value: B256,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PredicateType {
+    CommitmentEquals,
+    SequenceAtLeast,
+    SlotUnlocked,
+    ZanzibarRelationActive,
+}
+
+/// A declarative mutation applied to an account slot during a saga.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotMutation {
+    pub account: Address,
+    pub slot_id: u16,
+    pub new_commitment: B256,
+    pub type_tag: u16,
+    pub schema_hash: B256,
+}
+
+/// A multi-actor declarative intent coordinating atomic state transitions across CAR slots.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LatticeSagaIntent {
+    pub intent_id: B256,
+    pub initiator: Address,
+    pub target_accounts: Vec<Address>,
+    pub pre_conditions: Vec<SlotPredicate>,
+    pub mutations: Vec<SlotMutation>,
+    pub compensations: Vec<SlotMutation>,
+    pub created_epoch: u64,
+    pub timeout_epoch: u64,
+    pub status: SagaStatus,
+    pub lock_id: B256,
+}
+
+impl LatticeSagaIntent {
+    pub fn new(
+        intent_id: B256,
+        initiator: Address,
+        target_accounts: Vec<Address>,
+        created_epoch: u64,
+        timeout_epoch: u64,
+    ) -> Self {
+        let mut buf = Vec::with_capacity(13 + 32 + 8);
+        buf.extend_from_slice(b"SAGA_LOCK_V1:");
+        buf.extend_from_slice(intent_id.as_slice());
+        buf.extend_from_slice(&timeout_epoch.to_le_bytes());
+        let lock_id = alloy_primitives::keccak256(&buf);
+
+        Self {
+            intent_id,
+            initiator,
+            target_accounts,
+            pre_conditions: Vec::new(),
+            mutations: Vec::new(),
+            compensations: Vec::new(),
+            created_epoch,
+            timeout_epoch,
+            status: SagaStatus::Pending,
+            lock_id,
+        }
+    }
+
+    pub fn add_precondition(&mut self, account: Address, slot_id: u16, pred_type: PredicateType, expected: B256) {
+        self.pre_conditions.push(SlotPredicate {
+            account,
+            slot_id,
+            predicate_type: pred_type,
+            expected_value: expected,
+        });
+    }
+
+    pub fn add_mutation(&mut self, account: Address, slot_id: u16, new_comm: B256, type_tag: u16, schema: B256) {
+        self.mutations.push(SlotMutation {
+            account,
+            slot_id,
+            new_commitment: new_comm,
+            type_tag,
+            schema_hash: schema,
+        });
+    }
+
+    pub fn add_compensation(&mut self, account: Address, slot_id: u16, comp_comm: B256, type_tag: u16, schema: B256) {
+        self.compensations.push(SlotMutation {
+            account,
+            slot_id,
+            new_commitment: comp_comm,
+            type_tag,
+            schema_hash: schema,
+        });
+    }
+}
+
+/// Autonomous coordinator for evaluating, staging, committing, and rolling back multi-slot sagas.
+pub struct LatticeSagaCoordinator;
+
+impl LatticeSagaCoordinator {
+    /// Evaluates pre-conditions across all target account registers.
+    pub fn evaluate_predicates(
+        intent: &LatticeSagaIntent,
+        accounts: &std::collections::HashMap<Address, crate::lattice::car_register::PolymorphicAccountRegister>,
+    ) -> Result<(), &'static str> {
+        for pred in &intent.pre_conditions {
+            let reg = accounts.get(&pred.account)
+                .ok_or("Precondition target account not found in active lattice")?;
+
+            let slot = reg.slots.get(&pred.slot_id);
+
+            match pred.predicate_type {
+                PredicateType::CommitmentEquals => {
+                    let comm = slot.map(|s| s.commitment).unwrap_or(B256::ZERO);
+                    if comm != pred.expected_value {
+                        return Err("Precondition failed: slot commitment mismatch");
+                    }
+                }
+                PredicateType::SequenceAtLeast => {
+                    let seq = slot.map(|s| s.sequence).unwrap_or(0);
+                    let min_seq = u64::from_le_bytes(pred.expected_value[0..8].try_into().unwrap());
+                    if seq < min_seq {
+                        return Err("Precondition failed: slot sequence below required minimum");
+                    }
+                }
+                PredicateType::SlotUnlocked => {
+                    let lock_slot = reg.slots.get(&SLOT_SAGA_LOCK);
+                    let current_lock = lock_slot.map(|s| s.commitment).unwrap_or(B256::ZERO);
+                    if current_lock != B256::ZERO && current_lock != intent.lock_id {
+                        return Err("Precondition failed: target account slot 7 is locked by another saga");
+                    }
+                }
+                PredicateType::ZanzibarRelationActive => {
+                    let zanzibar_slot = reg.slots.get(&1);
+                    if zanzibar_slot.is_none() || zanzibar_slot.unwrap().commitment == B256::ZERO {
+                        return Err("Precondition failed: required Zanzibar relation accumulator not initialized");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Stages the saga by locking Slot 7 on all involved target accounts.
+    pub fn stage_and_lock(
+        intent: &mut LatticeSagaIntent,
+        accounts: &mut std::collections::HashMap<Address, crate::lattice::car_register::PolymorphicAccountRegister>,
+        current_epoch: u64,
+    ) -> Result<(), &'static str> {
+        if intent.status != SagaStatus::Pending && intent.status != SagaStatus::Simulating {
+            return Err("Cannot stage intent: invalid initial status");
+        }
+        if current_epoch > intent.timeout_epoch {
+            intent.status = SagaStatus::RolledBack;
+            return Err("Cannot stage intent: already expired");
+        }
+
+        Self::evaluate_predicates(intent, accounts)?;
+
+        // Acquire lock on Slot 7 for each target account
+        for addr in &intent.target_accounts {
+            let reg = accounts.get_mut(addr)
+                .ok_or("Target account register missing during lock acquisition")?;
+
+            if !reg.slots.contains_key(&SLOT_SAGA_LOCK) {
+                reg.mount_slot(
+                    SLOT_SAGA_LOCK,
+                    intent.lock_id,
+                    B256::ZERO,
+                    "LATTICE_SAGA_LOCK".to_string(),
+                )?;
+            } else {
+                let current_lock = reg.slots.get(&SLOT_SAGA_LOCK).unwrap().commitment;
+                if current_lock != B256::ZERO && current_lock != intent.lock_id {
+                    return Err("Contended lock: target account is locked by an active saga");
+                }
+                reg.transition_slot(SLOT_SAGA_LOCK, intent.lock_id, current_epoch)?;
+            }
+        }
+
+        intent.status = SagaStatus::Staged;
+        Ok(())
+    }
+
+    /// Atomically applies all planned slot mutations and releases the Slot 7 locks.
+    pub fn commit(
+        intent: &mut LatticeSagaIntent,
+        accounts: &mut std::collections::HashMap<Address, crate::lattice::car_register::PolymorphicAccountRegister>,
+        current_epoch: u64,
+    ) -> Result<(), &'static str> {
+        if intent.status != SagaStatus::Staged {
+            return Err("Cannot commit intent: must be in Staged status");
+        }
+        if current_epoch > intent.timeout_epoch {
+            // Expired while staged -> must execute compensation rollback
+            return Self::rollback(intent, accounts, current_epoch);
+        }
+
+        // Apply all mutations
+        for mut_spec in &intent.mutations {
+            let reg = accounts.get_mut(&mut_spec.account)
+                .ok_or("Account missing during mutation application")?;
+
+            if !reg.slots.contains_key(&mut_spec.slot_id) {
+                reg.mount_slot(
+                    mut_spec.slot_id,
+                    mut_spec.new_commitment,
+                    mut_spec.schema_hash,
+                    format!("slot_{}", mut_spec.slot_id),
+                )?;
+            } else {
+                reg.transition_slot(mut_spec.slot_id, mut_spec.new_commitment, current_epoch)?;
+            }
+        }
+
+        // Release Slot 7 locks
+        for addr in &intent.target_accounts {
+            if let Some(reg) = accounts.get_mut(addr) {
+                if reg.slots.contains_key(&SLOT_SAGA_LOCK) {
+                    reg.transition_slot(SLOT_SAGA_LOCK, B256::ZERO, current_epoch)?;
+                }
+            }
+        }
+
+        intent.status = SagaStatus::Committed;
+        Ok(())
+    }
+
+    /// Reverts staged changes by applying compensations and clearing Slot 7 locks.
+    pub fn rollback(
+        intent: &mut LatticeSagaIntent,
+        accounts: &mut std::collections::HashMap<Address, crate::lattice::car_register::PolymorphicAccountRegister>,
+        current_epoch: u64,
+    ) -> Result<(), &'static str> {
+        // Apply compensations if available
+        for comp in &intent.compensations {
+            if let Some(reg) = accounts.get_mut(&comp.account) {
+                if reg.slots.contains_key(&comp.slot_id) {
+                    let _ = reg.transition_slot(comp.slot_id, comp.new_commitment, current_epoch);
+                }
+            }
+        }
+
+        // Release Slot 7 locks
+        for addr in &intent.target_accounts {
+            if let Some(reg) = accounts.get_mut(addr) {
+                if reg.slots.contains_key(&SLOT_SAGA_LOCK) {
+                    let _ = reg.transition_slot(SLOT_SAGA_LOCK, B256::ZERO, current_epoch);
+                }
+            }
+        }
+
+        intent.status = SagaStatus::RolledBack;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,5 +495,93 @@ mod tests {
 
         target_actor.process_attestation(&packet).unwrap();
         assert_eq!(target_actor.state, ActorState::Commit);
+    }
+
+    #[test]
+    fn test_declarative_lattice_saga_coordination() {
+        use std::collections::HashMap;
+        use crate::lattice::car_register::PolymorphicAccountRegister;
+
+        let alice = Address::repeat_byte(0xaa);
+        let bob = Address::repeat_byte(0xbb);
+        let mut accounts = HashMap::new();
+
+        let mut reg_alice = PolymorphicAccountRegister::new_with_default_config(alice, U256::ZERO);
+        let reg_bob = PolymorphicAccountRegister::new_with_default_config(bob, U256::ZERO);
+
+        let initial_comm = B256::repeat_byte(0x11);
+        reg_alice.mount_slot(1, initial_comm, B256::ZERO, "slot_1".to_string()).unwrap();
+
+        accounts.insert(alice, reg_alice);
+        accounts.insert(bob, reg_bob);
+
+        let intent_id = B256::repeat_byte(0x77);
+        let mut intent = LatticeSagaIntent::new(intent_id, alice, vec![alice, bob], 100, 150);
+
+        // Pre-condition: Alice slot 1 must equal initial_comm, and Slot 7 must be unlocked
+        intent.add_precondition(alice, 1, PredicateType::CommitmentEquals, initial_comm);
+        intent.add_precondition(alice, SLOT_SAGA_LOCK, PredicateType::SlotUnlocked, B256::ZERO);
+        intent.add_precondition(bob, SLOT_SAGA_LOCK, PredicateType::SlotUnlocked, B256::ZERO);
+
+        // Mutations: Alice debits note in Slot 2, Bob credits note in Slot 2
+        let note_alice = B256::repeat_byte(0x22);
+        let note_bob = B256::repeat_byte(0x33);
+        intent.add_mutation(alice, 2, note_alice, 0x0001, B256::ZERO);
+        intent.add_mutation(bob, 2, note_bob, 0x0001, B256::ZERO);
+
+        // Compensations
+        intent.add_compensation(alice, 2, B256::ZERO, 0x0001, B256::ZERO);
+        intent.add_compensation(bob, 2, B256::ZERO, 0x0001, B256::ZERO);
+
+        // 1. Stage and Lock
+        LatticeSagaCoordinator::stage_and_lock(&mut intent, &mut accounts, 105).unwrap();
+        assert_eq!(intent.status, SagaStatus::Staged);
+
+        // Verify Slot 7 is locked on both accounts
+        let alice_lock = accounts.get(&alice).unwrap().slots.get(&SLOT_SAGA_LOCK).unwrap().commitment;
+        let bob_lock = accounts.get(&bob).unwrap().slots.get(&SLOT_SAGA_LOCK).unwrap().commitment;
+        assert_eq!(alice_lock, intent.lock_id);
+        assert_eq!(bob_lock, intent.lock_id);
+
+        // 2. Commit
+        LatticeSagaCoordinator::commit(&mut intent, &mut accounts, 110).unwrap();
+        assert_eq!(intent.status, SagaStatus::Committed);
+
+        // Verify mutations applied
+        assert_eq!(accounts.get(&alice).unwrap().slots.get(&2).unwrap().commitment, note_alice);
+        assert_eq!(accounts.get(&bob).unwrap().slots.get(&2).unwrap().commitment, note_bob);
+
+        // Verify Slot 7 locks released
+        assert_eq!(accounts.get(&alice).unwrap().slots.get(&SLOT_SAGA_LOCK).unwrap().commitment, B256::ZERO);
+        assert_eq!(accounts.get(&bob).unwrap().slots.get(&SLOT_SAGA_LOCK).unwrap().commitment, B256::ZERO);
+    }
+
+    #[test]
+    fn test_lattice_saga_timeout_and_compensation_rollback() {
+        use std::collections::HashMap;
+        use crate::lattice::car_register::PolymorphicAccountRegister;
+
+        let charlie = Address::repeat_byte(0xcc);
+        let mut accounts = HashMap::new();
+        let reg_charlie = PolymorphicAccountRegister::new_with_default_config(charlie, U256::ZERO);
+        accounts.insert(charlie, reg_charlie);
+
+        let intent_id = B256::repeat_byte(0x88);
+        let mut intent = LatticeSagaIntent::new(intent_id, charlie, vec![charlie], 100, 120);
+
+        let comp_comm = B256::repeat_byte(0x55);
+        intent.add_mutation(charlie, 4, B256::repeat_byte(0x99), 0x0004, B256::ZERO);
+        intent.add_compensation(charlie, 4, comp_comm, 0x0004, B256::ZERO);
+
+        LatticeSagaCoordinator::stage_and_lock(&mut intent, &mut accounts, 105).unwrap();
+        assert_eq!(intent.status, SagaStatus::Staged);
+
+        // Commit attempted after timeout (epoch 125 > timeout 120) -> auto rollbacks
+        assert!(LatticeSagaCoordinator::commit(&mut intent, &mut accounts, 125).is_ok());
+        assert_eq!(intent.status, SagaStatus::RolledBack);
+
+        // Check lock released and compensation applied
+        assert_eq!(accounts.get(&charlie).unwrap().slots.get(&SLOT_SAGA_LOCK).unwrap().commitment, B256::ZERO);
+        assert_eq!(accounts.get(&charlie).unwrap().slots.get(&4).unwrap().commitment, comp_comm);
     }
 }

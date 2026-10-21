@@ -55,3 +55,4 @@ export * from './components/sovereign_corporate_disclosure_viewer.js';
 export * from './car_reconciler.js';
 export * from './car_inspector.js';
 export * from './dao_plugin_system.js';
+export * from './heres_agent_runtime.js';
