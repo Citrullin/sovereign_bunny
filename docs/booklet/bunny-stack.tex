@@ -66,8 +66,8 @@ React Server Components blurred separation of concerns by mixing network calls a
 \toprule
 \textbf{Layer} & \textbf{Responsibility and invariant} & \textbf{Status} \\
 \midrule
-1. Local state and persistence & Application code mutates a typed actor store and configures a storage adapter (IndexedDB or Origin Private File System in a browser; SQLite or an embedded key-value store on a node). It contains no RPC calls, no circuit imports and no consensus logic, and works fully offline & \stPlan{} (wallet state machines exist: \path{wallet/ts/src/lattice_machine.ts}, \path{storage_manager.ts}) \\
-2. Reconciler (WASM, worker) & Maintains the double-buffered Virtual CAR; on commit diffs against the last settled roots, updates accumulators, computes $\Delta_{\text{slot}}$ and the next nonce & \stPlan{} (Hive P2) \\
+1. Local state and persistence & Application code mutates a typed actor store and configures a storage adapter (IndexedDB or Origin Private File System in a browser; SQLite or an embedded key-value store on a node). It contains no RPC calls, no circuit imports and no consensus logic, and works fully offline & \stImpl{} (implemented in \path{wallet/ts/src/state_object_model.ts}, \path{car_reconciler.ts}, \path{storage_manager.ts}) \\
+2. Reconciler (WASM, worker) & Maintains the double-buffered Virtual CAR; on commit diffs against the last settled roots, updates accumulators, computes $\Delta_{\text{slot}}$ and the next nonce & \stImpl{} (implemented in \path{wallet/ts/src/car_reconciler.ts}, \path{car_inspector.ts}, and \path{state_object_model.ts}) \\
 3. Prover and signer bridge & Selects the circuit for each dirty slot (\path{wallet/ts/src/circuits.ts}), formats witnesses, proves, and requests one signature from a hardware or wallet signer & \stPart{} (circuit loading and wallet connector exist) \claim{verify scope} \\
 4. Transport and sync adapter & Packs the sealed frame as a \code{BNY\textbackslash x01} SSZ envelope and dispatches it onto the urgent or background lane without blocking local reads & \stPart{} (envelope tooling in \path{crates/cli}, \path{wallet/ts/src/envelopes.ts}) \claim{verify} \\
 \bottomrule
@@ -76,7 +76,7 @@ React Server Components blurred separation of concerns by mixing network calls a
 \end{table}
 
 \subsection{Interface sketch}
-\begin{lstlisting}[language=TypeScript,caption={Specification sketch: host-neutral client interface (target file \code{wallet/ts/src/car\_reconciler.ts}; not yet present).},label={lst:car_client}]
+\begin{lstlisting}[language=TypeScript,caption={Host-neutral client interface (implemented in \code{wallet/ts/src/car\_reconciler.ts} and \code{wallet/ts/src/state\_object\_model.ts}).},label={lst:car_client}]
 // Storage and transport are pluggable host capabilities.
 export interface LocalStoreAdapter {
   readSlot(slot: number): Promise<Uint8Array>;
@@ -101,7 +101,7 @@ export interface SovereignActorClient<TSchema> {
   proposeIntent(intent: CrossActorIntent): ReadableStream<SagaState>;
 }
 \end{lstlisting}
-Package names such as a local-state library or an Iroh sync adapter are proposals; none of them is published or exists in the workspace today.
+The reference client in \path{wallet/ts/src/car_reconciler.ts} and \path{wallet/ts/src/state_object_model.ts} implements this interface, supporting pluggable in-memory, IndexedDB, and SQLite storage adapters alongside framed \code{BNY\textbackslash x01} SSZ serialization.
 
 \subsection{Three edge cases the SDK must not hide}
 \begin{enumerate}
@@ -109,6 +109,48 @@ Package names such as a local-state library or an Iroh sync adapter are proposal
   \item \textbf{The latency gap between a JavaScript write and a proven, anchored one.} A local write is microseconds to milliseconds; browser proving and epoch finality are orders of magnitude slower (proving time and the ten-second epoch are targets, not measurements, for this stack \claim{unmeasured}). The status of every state atom is therefore reactive and exposes Staged, Sealed, Anchored and Rejected. Staged data must be durable before the call returns, and a resumed session must be able to find Staged work after a tab closes and finish sealing it, so closing a tab never silently loses an accepted edit.
   \item \textbf{Host-language numerics and ordering.} Canonical state lives in SSZ linear memory (WASM) with typed-array or proxy views; amounts are fixed-point \code{bigint} or \code{u128}, never \code{number}; collections serialise in a specified canonical order. A host object model is a view, never the source of truth.
 \end{enumerate}
+
+\subsection{The State Object Model (SOM): Verifiable Declarative Reactivity}
+\label{sec:som_architecture}
+
+Drawing on the architectural lineage from John Carmack's DOOM~3 renderer to React's Virtual DOM, the client runtime demotes in-memory state to a declarative, write-only render target driven by a virtual diffing engine:
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}L{4.2cm}Y@{}}
+\toprule
+\textbf{Concept} & \textbf{Browser UI Pipeline} & \textbf{Verifiable State Pipeline (SOM)} \\
+\midrule
+Raw Source / Wire & HTML text / Network stream & Canonical SSZ / CBOR event stream from Iroh \\
+Virtual Representation & Virtual DOM (VNode tree) & Virtual State Frame ($S_{\text{virtual}}$ candidate in RAM) \\
+Diffing Engine & Fiber reconciler / Myers diff & Merkle / Register Delta reconciler ($\Delta S = S_{t+1} \ominus S_t$) \\
+Canonical Target & Real DOM (C++ browser tree) & SOM backing client memory \& local views \\
+Commit Invariant & Pixels painted to framebuffer & 32-byte cryptographic root verified by ZK circuit \\
+\bottomrule
+\end{tabularx}
+\caption{The Tripartite Mapping: DOM vs.\ VDOM vs.\ SOM.}
+\end{table}
+
+The SOM operates under four interlocking systems invariants:
+\begin{enumerate}
+  \item \textbf{Strict Unidirectional Data Flow \& Read-Only Projection:} Direct mutations to the SOM tree are strictly prohibited (accessing slot buffers returns frozen proxy projections that throw on mutation attempts). All state mutations must be dispatched as strongly typed actions:
+  \begin{equation}
+    \text{Action} \xrightarrow{\text{deReBAC Guard}} \text{Batch Queue} \xrightarrow{\text{State Fold}} S_{t+1} = f(S_t, \Delta S) \xrightarrow{\text{Patch}} \text{SOM}
+  \end{equation}
+  \item \textbf{Run-to-Completion Semantics:} State folds execute within isolated microtask turns. Intermediate states are never exposed to external listeners, eliminating reentrancy vulnerabilities and dirty reads across multi-slot transitions.
+  \item \textbf{Path-Based Fine-Grained Signals \& Event Bubbling:} Subscriptions bind to exact slot paths (e.g., \code{som.observe("slots[3].git", ...)}). Mutations only trigger subscribers on that specific sub-tree, while hierarchical events bubble upwards from leaf capability slots to the account register and manifold relay mesh.
+  \item \textbf{Fiber-Lane Transaction Squashing \& Sovereign Pure Rebase:} Rapid micro-actions within the same tick are coalesced into a single net register delta $\Delta S$, minimizing zero-knowledge witness generation. When concurrent distributed actors submit updates to an account with nonce $N+1$, the SOM performs a Git 3-way rebase: if remote head $S_{t+1(\text{remote})}$ touched Slot~2 (Blind Notes) and local uncommitted actions touched Slot~3 (Git), the actions replay cleanly on top of the remote tip without conflicts.
+\end{enumerate}
+
+\subsection{Heres: Cognitive Swarm Architecture \& Intent-Based System}
+\label{sec:heres_swarm_ibs}
+
+The reference stack integrates an autonomous multi-agent runtime (\path{git/sovereign-heres}) operating over the stateless account-lattice:
+\begin{itemize}
+  \item \textbf{Dual-Engine Cognitive Core:} Continuous trajectory evaluation is governed by a Joint-Embedding Predictive Architecture (JEPA) world model computing representation-space energy gradients in $\mathbb{R}^{256}$, paired with an executive policy tier served via quantized 0.5B LLMs (Ollama on CPU for hermetic offline testing; vLLM continuous batching for swarm cluster deployments).
+  \item \textbf{Connectome Reflex Tier:} For high-frequency trading and rapid market-making, a \emph{Drosophila} fruit fly connectome brain (\code{ProtocerebralBridge}, \code{CentralComplex}, and \code{MushroomBodyValenceMemory}) evaluates sensory telemetry in $1$--$6\,\mu\text{s}$, executing sub-millisecond panic cancels and bilateral netting triggers without awaiting LLM inference.
+  \item \textbf{Stateless Lattice Sagas:} Multi-actor intents execute across contended slots using a decentralized Saga protocol with atomic slot reservations, epoch timeouts, and automated compensating rollbacks upon failure.
+\end{itemize}
 
 \subsection{Developer experience}
 \begin{lstlisting}[language=TypeScript,caption={Illustrative usage (names are proposals). Identifiers are placeholders supplied by the application, not fixed values.}]

@@ -56,3 +56,4 @@ export * from './car_reconciler.js';
 export * from './car_inspector.js';
 export * from './dao_plugin_system.js';
 export * from './heres_agent_runtime.js';
+export * from './state_object_model.js';

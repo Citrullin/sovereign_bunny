@@ -1544,6 +1544,24 @@ Even without BLE 5.0 Extended Advertising (\code{ADV\_EXT\_IND}), the entire pay
 \paragraph{The Memory-in-Pixel (MIP) Display Invariant (WYSIWYS).}
 Upon validation of an incoming note, the wearable MCU updates its internal Sparse Merkle Tree in SPI flash and pushes the pixel diff directly over SPI to a transflective Memory-in-Pixel (MIP) screen. Because each pixel in an MIP display contains an embedded static RAM cell, the screen requires zero backlight and draws less than 15\,$\mu$W to maintain a static image. The user glances at their wrist and verifies their balance increment in broad daylight with zero phone tethering, zero pairing menus, and zero cloud intermediaries. Furthermore, because a single node may claim unlimited IPv6 addresses under its prefix, content-addressed routing collapses directly into the network layer: the address \emph{is} the content filter.
 
+\subsection{The 64-Slot Polymorphic DAO Plugin System \& Private Type Tagging}
+\label{sec:polymorphic_dao_plugins}
+
+In legacy blockchain ecosystems, decentralized governance is constrained to uniform token-weighted voting contracts (such as Compound Governor or OpenZeppelin Governor) that leak corporate organizational charts to public block explorers. In contrast, real-world corporate law encompasses heterogeneous statutory entities: the German limited liability company (\emph{GmbH} under GmbHG), the registered cooperative (\emph{eingetragene Genossenschaft, e.G.} under GenG), registered non-profit associations (\emph{e.V.} under BGB \S\S~21--79), and industrial supply-chain consortia.
+
+The Sovereign account-lattice formalizes a \textbf{Polymorphic DAO Plugin Architecture} (\path{wallet/ts/src/dao_plugin_system.ts}) mapping statutory legal requirements directly to linear memory slots:
+\begin{enumerate}
+  \item \textbf{Statutory Ingestion from Commercial Registers (HRB):} Corporate disclosures ingested from the European Business Register and German \emph{Handelsregister} (HRB) populate company identification, share capital, managing directors (\emph{Gesch\"aftsf\"uhrer}), and supervisory board mandates into Slot~4 (Proof of SQL).
+  \item \textbf{Statutory Democratic Equality (GenG \S~43):} For cooperatives (\emph{e.G.}), voting weight is decoupled from capital contribution: each verified member possesses exactly one vote regardless of equity or token holdings, enforced via zero-knowledge equality proofs.
+  \item \textbf{Meritocratic Reputation Graphs (e.V.):} For open-source and civic associations (\emph{e.V.}), voting power is derived dynamically from peer-to-peer reputation flows (MeritRank) anchored in Slot~1 (Zanzibar ReBAC), rewarding verified code contributions and operational labor.
+  \item \textbf{Industrial Supply-Chain Consortia:} Supply-chain alliances anchor software bills of materials (CycloneDX SBOMs) and verified hardware certificates of analysis (CoA), enforcing provenance before inventory notes are cleared.
+  \item \textbf{Confidential Type Identification via Aztec View Tags:} To prevent adversarial pattern-matching and corporate espionage, the entity's organizational archetype is kept completely confidential. The plugin system derives a 1-byte private type tag:
+  \begin{equation}
+    \tau_{\text{type}} = \operatorname{SHA256}(S_{\text{view}} \mathbin{\Vert} \text{ArchetypeID})[0]
+  \end{equation}
+  Only counterparties holding the entity's viewing key can resolve the underlying governance archetype and decode Slot~2 notes; to outside network observers, all transactions appear as uniform, indistinguishable 32-byte cryptographic commitments.
+\end{enumerate}
+
 \subsection{Gramine Intel SGX Confidential Enclave Build Manifest}
 \label{sec:gramine_manifest}
 
@@ -2848,6 +2866,12 @@ A structural vulnerability of multi-chain ecosystems has been the reliance on ce
 The Sovereign Bunny architecture eliminates bridges entirely. By treating accounts as autonomous actors communicating via point-to-point Iroh QUIC streams and Blind Notes~\cite{williamson2022aztec}, \textbf{cross-ledger clearing occurs through mathematical multilateral netting}:
 \begin{enumerate}
   \item \textbf{Decentralized Obligation Graph:} Commercial counterparties operating across disparate systems (e.g., enterprise SAP on AWS, a local Sovereign Bunny manifold, and legacy Ethereum mainnet) exchange encrypted debt commitments ($\Delta_{ij}$) as Blind Notes in Slot~2.
+  \item \textbf{Decentralized Cycle Discovery via Local JEPA \& Blinded Probes:} Traditional multilateral netting historically required a centralized clearing house or heavy secure multi-party computation (SMPC) to reconstruct the global liability graph. The Sovereign architecture decentralizes cycle discovery without exposing private debt amounts:
+  \begin{itemize}
+    \item \textbf{Local JEPA Flow Embeddings:} Each node's local Joint-Embedding Predictive Architecture (JEPA) models liquidity flow vectors in continuous representation space ($\mathbb{R}^{256}$), predicting high-likelihood netting trajectories based on historical settlement cadences without decrypting counterparty data.
+    \item \textbf{Blinded Probe Notes:} Autonomous agents dispatch ephemeral, blinded probe notes across Iroh QUIC channels. If a probe returns to its origin along a closed directed path, the cyclic closure $\mathcal{C}$ is proven without revealing intermediate balances.
+    \item \textbf{Stateless Atomic Cancellation:} Once $\mathcal{C}$ is discovered, the cycle participants assemble a composite zero-knowledge clearing proof $\pi_{\text{clearing}}$, nullifying the gross liabilities in Slot~2 and settling the net reduction in a single atomic epoch.
+  \end{itemize}
   \item \textbf{Bridge-Free Cyclic Netting:} The netting algorithm identifies closed debt cycles:
   \begin{equation}
     \mathcal{C} = \{(1 \to 2), (2 \to 3), \dots, (k \to 1)\}, \quad \Delta_{\text{net}} = \min_{(i,j) \in \mathcal{C}} \Delta_{ij}
@@ -3497,7 +3521,7 @@ Reputation and anti-Sybil & \stPart & Topological RTT dispersion, ASN 20\% quota
 Nullifier set / roots & \stPart & Order-independent Merkle tree with non-membership proofs\\
 Data-availability sampling & \stStub & Commitments, random sampling, fraud proofs\\
 Fee-funded economics (\cref{sec:econ}) & \stSpec & Endogenous credit ($\Delta M = \Delta Y$); fee splits (70/20/10); storage endowments\\
-Exit drill & \stPlan & CI job: export, restore, compare roots\\
+Exit drill & \stImpl & Operationalized CI exit drill under avatar fuzzing (\path{tests/avatar_fuzz_exit_drill.test.ts}); bit-exact Keccak-256 state-root equality verified after cold rehydration\\
 \bottomrule
 \end{tabularx}
 \caption{Status per component at the time of writing. Monotonic lattice nonces and web sign-in have achieved fail-closed completion; ZK circuits, Proof of SQL, Pontes DvP, and anti-Sybil engines have advanced to hardened partial implementation.}

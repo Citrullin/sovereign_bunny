@@ -255,12 +255,24 @@ export class VirtualCarBuffer {
     public slots: Uint8Array[] = [];
     public nonces: bigint[] = [];
     public dirtyMask: bigint = 0n;
+    public nonce: bigint = 0n;
 
     constructor() {
         for (let i = 0; i < 64; i++) {
             this.slots.push(new Uint8Array(32));
             this.nonces.push(0n);
         }
+    }
+
+    clone(): VirtualCarBuffer {
+        const copy = new VirtualCarBuffer();
+        for (let i = 0; i < 64; i++) {
+            copy.slots[i] = new Uint8Array(this.slots[i]);
+            copy.nonces[i] = this.nonces[i];
+        }
+        copy.dirtyMask = this.dirtyMask;
+        copy.nonce = this.nonce;
+        return copy;
     }
 
     setSlot(index: number, data: Uint8Array) {
