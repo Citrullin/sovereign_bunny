@@ -25,6 +25,14 @@ use wasm_bindgen::prelude::*;
 
 pub const NUM_SLOTS: usize = 64;
 
+/// Canonical Polymorphic DAO & State Type Tags
+pub const TYPE_TAG_RAW: u16 = 0x0000;
+pub const TYPE_TAG_GMBH_CORP: u16 = 0x0001;        // HRB (Handelsregister B) Corporate Entity
+pub const TYPE_TAG_EG_COOP: u16 = 0x0002;          // GnR (Genossenschaftsregister) Cooperative Entity
+pub const TYPE_TAG_EV_ASSOC: u16 = 0x0003;         // VR (Vereinsregister) Non-profit Association
+pub const TYPE_TAG_SUPPLY_CONSORTIUM: u16 = 0x0004;// Industrial B2B Consortium
+pub const TYPE_TAG_MUTUAL_BANK: u16 = 0x0005;      // Sparkassen/Volksbanken CBMT Corridor
+
 /// A single slot within the 64-slot Compact Account Register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VirtualSlot {
@@ -33,6 +41,10 @@ pub struct VirtualSlot {
     pub previous_commitment: B256,
     pub sequence: u64,
     pub last_updated_epoch: u64,
+    #[serde(default)]
+    pub type_tag: u16,
+    #[serde(default)]
+    pub schema_hash: B256,
 }
 
 impl Default for VirtualSlot {
@@ -43,6 +55,8 @@ impl Default for VirtualSlot {
             previous_commitment: B256::ZERO,
             sequence: 0,
             last_updated_epoch: 0,
+            type_tag: TYPE_TAG_RAW,
+            schema_hash: B256::ZERO,
         }
     }
 }
@@ -56,7 +70,34 @@ impl VirtualSlot {
             previous_commitment: B256::ZERO,
             sequence,
             last_updated_epoch: epoch,
+            type_tag: TYPE_TAG_RAW,
+            schema_hash: B256::ZERO,
         }
+    }
+
+    #[must_use]
+    pub fn new_typed(
+        slot_id: u16,
+        commitment: B256,
+        sequence: u64,
+        epoch: u64,
+        type_tag: u16,
+        schema_hash: B256,
+    ) -> Self {
+        Self {
+            slot_id,
+            commitment,
+            previous_commitment: B256::ZERO,
+            sequence,
+            last_updated_epoch: epoch,
+            type_tag,
+            schema_hash,
+        }
+    }
+
+    #[must_use]
+    pub fn is_typed(&self) -> bool {
+        self.type_tag != TYPE_TAG_RAW
     }
 }
 
@@ -175,6 +216,8 @@ impl VirtualCarTree {
                 previous_commitment: B256::ZERO,
                 sequence: if commitments[i] == B256::ZERO { 0 } else { 1 },
                 last_updated_epoch: 1,
+                type_tag: TYPE_TAG_RAW,
+                schema_hash: B256::ZERO,
             };
         }
         Self {
@@ -210,6 +253,18 @@ impl VirtualCarTree {
         new_commitment: B256,
         epoch: u64,
     ) -> Result<(), &'static str> {
+        self.set_slot_typed(slot_id, new_commitment, epoch, TYPE_TAG_RAW, B256::ZERO)
+    }
+
+    /// Sets a slot commitment with an explicit polymorphic type tag and schema hash.
+    pub fn set_slot_typed(
+        &mut self,
+        slot_id: u16,
+        new_commitment: B256,
+        epoch: u64,
+        type_tag: u16,
+        schema_hash: B256,
+    ) -> Result<(), &'static str> {
         let idx = slot_id as usize;
         if idx >= NUM_SLOTS {
             return Err("Slot ID exceeds 64-slot bounds (R_0..R_63)");
@@ -220,6 +275,8 @@ impl VirtualCarTree {
         slot.commitment = new_commitment;
         slot.sequence += 1;
         slot.last_updated_epoch = epoch.max(1);
+        slot.type_tag = type_tag;
+        slot.schema_hash = schema_hash;
 
         self.dirty_mask |= 1u64 << idx;
         Ok(())
@@ -233,10 +290,30 @@ impl VirtualCarTree {
         epoch: u64,
         proposed_nonce: u64,
     ) -> Result<B256, &'static str> {
+        self.stage_transition_typed(
+            slot_id,
+            new_commitment,
+            epoch,
+            proposed_nonce,
+            TYPE_TAG_RAW,
+            B256::ZERO,
+        )
+    }
+
+    /// Stages a typed slot transition with explicit global nonce advancement.
+    pub fn stage_transition_typed(
+        &mut self,
+        slot_id: u16,
+        new_commitment: B256,
+        epoch: u64,
+        proposed_nonce: u64,
+        type_tag: u16,
+        schema_hash: B256,
+    ) -> Result<B256, &'static str> {
         if proposed_nonce != self.nonce + 1 {
             return Err("Non-monotonic proposed nonce");
         }
-        self.set_slot(slot_id, new_commitment, epoch)?;
+        self.set_slot_typed(slot_id, new_commitment, epoch, type_tag, schema_hash)?;
         self.nonce = proposed_nonce;
         Ok(self.compute_state_tip())
     }
@@ -373,6 +450,55 @@ impl WasmVirtualCarTree {
     pub fn dirty_mask_hex(&self) -> String {
         format!("0x{:016x}", self.inner.dirty_mask)
     }
+
+    #[wasm_bindgen]
+    pub fn set_slot_typed(
+        &mut self,
+        slot_id: u16,
+        commitment_hex: &str,
+        epoch: u64,
+        type_tag: u16,
+        schema_hash_hex: &str,
+    ) -> Result<(), JsValue> {
+        let comm = commitment_hex.parse::<B256>()
+            .map_err(|e| JsValue::from_str(&format!("Invalid commitment hex: {:?}", e)))?;
+        let schema = schema_hash_hex.parse::<B256>()
+            .map_err(|e| JsValue::from_str(&format!("Invalid schema hash hex: {:?}", e)))?;
+        self.inner.set_slot_typed(slot_id, comm, epoch, type_tag, schema).map_err(|e| JsValue::from_str(e))
+    }
+
+    #[wasm_bindgen]
+    pub fn stage_transition_typed(
+        &mut self,
+        slot_id: u16,
+        commitment_hex: &str,
+        epoch: u64,
+        proposed_nonce: u64,
+        type_tag: u16,
+        schema_hash_hex: &str,
+    ) -> Result<String, JsValue> {
+        let comm = commitment_hex.parse::<B256>()
+            .map_err(|e| JsValue::from_str(&format!("Invalid commitment hex: {:?}", e)))?;
+        let schema = schema_hash_hex.parse::<B256>()
+            .map_err(|e| JsValue::from_str(&format!("Invalid schema hash hex: {:?}", e)))?;
+        let tip = self.inner.stage_transition_typed(slot_id, comm, epoch, proposed_nonce, type_tag, schema)
+            .map_err(|e| JsValue::from_str(e))?;
+        Ok(format!("{:#x}", tip))
+    }
+
+    #[wasm_bindgen]
+    pub fn get_slot_type_tag(&self, slot_id: u16) -> Result<u16, JsValue> {
+        self.inner.get_slot(slot_id)
+            .map(|s| s.type_tag)
+            .ok_or_else(|| JsValue::from_str("Slot ID out of bounds"))
+    }
+
+    #[wasm_bindgen]
+    pub fn get_slot_schema_hash(&self, slot_id: u16) -> Result<String, JsValue> {
+        self.inner.get_slot(slot_id)
+            .map(|s| format!("{:#x}", s.schema_hash))
+            .ok_or_else(|| JsValue::from_str("Slot ID out of bounds"))
+    }
 }
 
 // =========================================================================
@@ -482,5 +608,28 @@ mod tests {
                 slot_id
             );
         }
+    }
+
+    #[test]
+    fn test_polymorphic_typed_slot_state_tip_invariance() {
+        let addr = Address::repeat_byte(0x42);
+        let mut raw_tree = VirtualCarTree::new(addr);
+        let mut typed_tree = VirtualCarTree::new(addr);
+
+        let comm = B256::repeat_byte(0x99);
+        let schema = B256::repeat_byte(0xfe);
+
+        // Raw transition vs Typed transition with same commitment
+        raw_tree.stage_transition(2, comm, 1, 1).unwrap();
+        typed_tree.stage_transition_typed(2, comm, 1, 1, TYPE_TAG_GMBH_CORP, schema).unwrap();
+
+        // compute_state_tip MUST be bit-for-bit identical regardless of type tag,
+        // preserving state tip consensus invariance while retaining polymorphic metadata in vState
+        assert_eq!(raw_tree.compute_state_tip(), typed_tree.compute_state_tip());
+
+        let slot = typed_tree.get_slot(2).unwrap();
+        assert_eq!(slot.type_tag, TYPE_TAG_GMBH_CORP);
+        assert_eq!(slot.schema_hash, schema);
+        assert!(slot.is_typed());
     }
 }

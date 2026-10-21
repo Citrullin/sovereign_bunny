@@ -3,6 +3,7 @@
 // Provides 64-slot introspection, global tree search, and automatic Noir Prover.toml synthesis.
 
 import { VirtualCarBuffer } from './car_reconciler.js';
+import { DaoPluginRegistry, IDaoPlugin, DaoTypeTag } from './dao_plugin_system.js';
 
 export interface SlotMetadata {
     slot: number;
@@ -30,6 +31,8 @@ export interface DecodedSlot {
     isDirty: boolean;
     rawHex: string;
     decodedSummary: string;
+    typeTag?: DaoTypeTag;
+    typeName?: string;
 }
 
 export interface TreeSearchMatch {
@@ -53,16 +56,27 @@ export class CarTreeInspector {
         };
     }
 
-    public static inspectSlot(buffer: VirtualCarBuffer, slot: number): DecodedSlot {
+    public static inspectSlot(
+        buffer: VirtualCarBuffer,
+        slot: number,
+        pluginOrTag?: IDaoPlugin | DaoTypeTag,
+        state?: any
+    ): DecodedSlot {
         const meta = this.getSlotMetadata(slot);
         const data = buffer.getSlot(slot);
         const nonce = buffer.nonces[slot] || 0n;
         const isDirty = (buffer.dirtyMask & (1n << BigInt(slot))) !== 0n;
         const hex = '0x' + Array.from(data).map(b => b.toString(16).padStart(2, '0')).join('');
 
+        const plugin = typeof pluginOrTag === 'number'
+            ? DaoPluginRegistry.get(pluginOrTag)
+            : pluginOrTag;
+
         let summary = 'Zero / Uninitialized';
         if (data.some(b => b !== 0)) {
-            if (slot === 0) {
+            if (plugin) {
+                summary = plugin.summarizeSlot(slot, data, state);
+            } else if (slot === 0) {
                 summary = `Identity Root: ${hex.slice(0, 10)}... (Nonce: ${nonce})`;
             } else if (slot === 1) {
                 summary = `Zanzibar Edge Accumulator: ${hex.slice(0, 10)}...`;
@@ -84,13 +98,19 @@ export class CarTreeInspector {
             isDirty,
             rawHex: hex,
             decodedSummary: summary,
+            typeTag: plugin?.typeTag,
+            typeName: plugin?.typeName,
         };
     }
 
-    public static inspectAll(buffer: VirtualCarBuffer): DecodedSlot[] {
+    public static inspectAll(
+        buffer: VirtualCarBuffer,
+        pluginOrTag?: IDaoPlugin | DaoTypeTag,
+        state?: any
+    ): DecodedSlot[] {
         const result: DecodedSlot[] = [];
         for (let i = 0; i < 64; i++) {
-            result.push(this.inspectSlot(buffer, i));
+            result.push(this.inspectSlot(buffer, i, pluginOrTag, state));
         }
         return result;
     }
