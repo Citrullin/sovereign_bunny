@@ -142,6 +142,21 @@ The SOM operates under four interlocking systems invariants:
   \item \textbf{Fiber-Lane Transaction Squashing \& Sovereign Pure Rebase:} Rapid micro-actions within the same tick are coalesced into a single net register delta $\Delta S$, minimizing zero-knowledge witness generation. When concurrent distributed actors submit updates to an account with nonce $N+1$, the SOM performs a Git 3-way rebase: if remote head $S_{t+1(\text{remote})}$ touched Slot~2 (Blind Notes) and local uncommitted actions touched Slot~3 (Git), the actions replay cleanly on top of the remote tip without conflicts.
 \end{enumerate}
 
+\subsection{Dual-Track History Engine and Distributed Blind Note Sagas}
+\label{sec:som_history_sagas}
+
+Handling history, undos, and rollbacks on a stateless account-lattice requires decoupling local ephemeral memory from immutable ledger-committed roots:
+\begin{enumerate}
+  \item \textbf{Track A: The Ephemeral Queue (Local Virtual Undo/Redo):} Prior to block sealing and zero-knowledge proof synthesis, staged mutations reside in an in-memory virtual queue. Calling \code{som.undo()} pops uncommitted actions, recalculates the virtual frame from the committed base root, and re-notifies observers with zero ledger fees and zero cryptographic trace.
+  \item \textbf{Track B: The Monotonic Committed Chain (Invertible Delta DAG):} Once an action commits into block $B_t$, the root is locked into the ledger and the account nonce cannot be decremented. Reverting to a target block height is executed as a \textbf{Git-revert style forward compensating block} $B_{n+1}$:
+  \begin{equation}
+    \Delta S_{\text{revert}} = \bigoplus_{k=n}^{\text{target}+1} \Delta S_k^{-1}, \quad S_{n+1} = S_n \oplus \Delta S_{\text{revert}}, \quad \text{Nonce}_{n+1} = \text{Nonce}_n + 1
+  \end{equation}
+  The state is restored bit-exact to $B_{\text{target}}$ while maintaining strict monotonic sequence nonces.
+  \item \textbf{Superposition Rollback over Blind Notes:} When value moves across asynchronous accounts via blind notes, the note commitment is generated with dual nullifier keys: a spending key $\text{sk}_{\text{spend}}$ for the counterparty and a reclamation key $\text{sk}_{\text{reclaim}}$ for the sender, bounded by an on-chain decay epoch $T_{\text{decay}}$. If the counterparty goes offline or aborts, the sender emits the reclamation nullifier $\mathcal{H}(\text{sk}_{\text{reclaim}}, \rho)$ after $T_{\text{decay}}$ expires, re-absorbing the deposit locally without counterparty intervention.
+  \item \textbf{Active Compensation and Bond Slashing:} If the note was already consumed into the counterparty's Slot~2 register before a downstream step failed, the counterparty's agent is programmatically required to emit a compensating reverse refund note. Defaulting on compensation past the dispute deadline triggers the lattice slashing precompile, seizing the counterparty's bonded deposit.
+\end{enumerate}
+
 \subsection{Heres: Cognitive Swarm Architecture \& Intent-Based System}
 \label{sec:heres_swarm_ibs}
 
