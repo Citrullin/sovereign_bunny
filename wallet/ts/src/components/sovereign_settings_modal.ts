@@ -163,6 +163,10 @@ export class SovereignSettingsModalElement extends BaseElement {
         }
     `;
 
+    createRenderRoot(): HTMLElement {
+        return this as unknown as HTMLElement;
+    }
+
     open(currentSettings?: Partial<SovereignSettings>) {
         if (currentSettings) {
             if (currentSettings.devMode !== undefined) this.devMode = currentSettings.devMode;
@@ -225,120 +229,134 @@ export class SovereignSettingsModalElement extends BaseElement {
         if (!this.isOpen) return '';
 
         return html`
-            <div class="modal-overlay" @click=${(e: Event) => { if (e.target === e.currentTarget) this.close(); }}>
-                <div class="modal-card">
-                    <p class="modal-title">⚙️ API Protocol & Cryptography Settings</p>
+            <div class="modal-overlay" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 10004; display: flex; justify-content: center; align-items: center; padding: 15px; box-sizing: border-box;" @click=${(e: Event) => { if (e.target === e.currentTarget) this.close(); }}>
+                <div class="nes-container is-dark with-title" style="width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; background: #212529; border: 4px solid #66fcf1; box-shadow: 0 8px #000; padding: 25px 20px 20px 20px; color: #fff; font-size: 0.7rem; box-sizing: border-box;">
+                    <p class="title" style="color: #66fcf1; background: #212529; font-size: 0.8rem; font-family: 'Press Start 2P', monospace;">⚙️ SETTINGS</p>
 
                     <!-- Developer Mode Toggle -->
-                    <div class="section-box warning-border">
-                        <label class="section-title">🛠️ Developer Options:</label>
-                        <label class="checkbox-row">
+                    <div class="section-box warning-border" style="margin-bottom: 15px; padding: 12px; background: #1a1600; border: 2px dashed #ffcc00; border-radius: 4px;">
+                        <label class="section-title" style="color: #ffcc00; font-weight: bold; margin-bottom: 8px; display: block;">🛠️ Developer Options:</label>
+                        <label class="checkbox-row" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                             <input
                                 type="checkbox"
+                                class="nes-checkbox is-dark"
                                 ?checked=${this.devMode}
                                 @change=${(e: Event) => { this.devMode = (e.target as HTMLInputElement).checked; }}
                             >
                             <span>Enable Developer Mode</span>
                         </label>
                         ${this.devMode ? html`
-                            <span class="hint-text" style="color: #ffcc00; margin-top: 8px;">
+                            <span class="hint-text" style="color: #ffcc00; margin-top: 8px; font-size: 0.62rem; display: block; line-height: 1.4;">
                                 ⚠️ <b>WARNING:</b> Developer mode exposes experimental CAIP-25/gRPC streaming, bare-metal bytecode debugging, Iroh DA storage uploads, and cache purging controls.
                             </span>
                         ` : ''}
                     </div>
 
+                    <!-- Cryptographic Execution Mode (Legacy API) -->
+                    <div class="section-box" style="margin-bottom: 15px; padding: 12px; background: #090c15; border: 1px solid #30363d; border-radius: 4px;">
+                        <label class="field-label" style="color: #ffcc00; display: block; margin-bottom: 4px; font-size: 0.68rem;">Cryptographic Execution Mode:</label>
+                        <div class="nes-select is-dark">
+                            <select
+                                style="font-size: 0.68rem;"
+                                .value=${this.cryptoWrap}
+                                @change=${(e: Event) => { this.cryptoWrap = (e.target as HTMLSelectElement).value as any; }}
+                            >
+                                <option value="pure">Legacy Pure Crypto (EIP-712 Structured Rabby/MetaMask Signing)</option>
+                                <option value="wrapped">Quantum Wrapper (Zero-Touch Post-Quantum Settlement)</option>
+                            </select>
+                        </div>
+                        <span class="hint-text" style="color: #66fcf1; font-size: 0.62rem; display: block; margin-top: 4px; line-height: 1.4;">
+                            ${this.cryptoWrap === 'pure' 
+                                ? '🛡️ Pure Mode: Dispatches transactions and signatures through your connected EVM wallet extension (Rabby/MetaMask) with interactive signature prompts.' 
+                                : '⚡ Quantum Wrapper: Settles lattice blocks via in-WASM ML-DSA zero-touch post-quantum signatures.'}
+                        </span>
+                    </div>
+
                     ${this.devMode ? html`
                         <!-- API Protocol Architecture -->
-                        <div class="field-group">
-                            <label class="field-label">API Protocol Architecture:</label>
-                            <select
-                                class="select-input"
-                                .value=${this.apiMode}
-                                @change=${(e: Event) => { this.apiMode = (e.target as HTMLSelectElement).value as any; }}
-                            >
-                                <option value="legacy">Legacy API (EVM Bytecode Precompiles / EIP-1193)</option>
-                                <option value="modern">Modern API (CAIP-25 / gRPC over HTTP-3 / CBOR)</option>
-                            </select>
-                            <span class="hint-text">Legacy API runs via standard EVM bytecode transactions. Modern API uses high-speed CAIP/gRPC streaming.</span>
+                        <div class="field-group" style="margin-bottom: 12px;">
+                            <label class="field-label" style="color: #ffcc00; display: block; margin-bottom: 4px; font-size: 0.68rem;">API Protocol Architecture:</label>
+                            <div class="nes-select is-dark">
+                                <select
+                                    style="font-size: 0.68rem;"
+                                    .value=${this.apiMode}
+                                    @change=${(e: Event) => { this.apiMode = (e.target as HTMLSelectElement).value as any; }}
+                                >
+                                    <option value="legacy">Legacy API (EVM Bytecode Precompiles / EIP-1193)</option>
+                                    <option value="modern">Modern API (CAIP-25 / gRPC over HTTP-3 / CBOR)</option>
+                                </select>
+                            </div>
+                            <span class="hint-text" style="font-size: 0.62rem; color: #8b949e; display: block; margin-top: 4px; line-height: 1.4;">Legacy API runs via standard EVM bytecode transactions. Modern API uses high-speed CAIP/gRPC streaming.</span>
                         </div>
 
-                        ${this.apiMode === 'legacy' ? html`
-                            <!-- Quantum Wrapping Toggle -->
-                            <div class="section-box">
-                                <label class="field-label">Cryptographic Execution Mode (Legacy API):</label>
-                                <select
-                                    class="select-input"
-                                    .value=${this.cryptoWrap}
-                                    @change=${(e: Event) => { this.cryptoWrap = (e.target as HTMLSelectElement).value as any; }}
-                                >
-                                    <option value="wrapped">Quantum Wrapper (Zero-Touch Post-Quantum Settlement)</option>
-                                    <option value="pure">Legacy Pure Crypto (EIP-712 Structured Rabby/MetaMask Signing)</option>
-                                </select>
-                                <span class="hint-text" style="color: #66fcf1;">Quantum Wrapper settles lattice blocks via in-WASM ML-DSA without wallet popups; Pure mode requests EIP-712 signatures.</span>
-                            </div>
-                        ` : html`
-                            <div class="section-box" style="background: #002b36; border-color: #2aa198;">
+                        ${this.apiMode === 'modern' ? html`
+                            <div class="section-box" style="background: #002b36; border: 2px solid #2aa198; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
                                 <span style="color: #2aa198; font-weight: bold;">⚡ Modern CAIP-25 / gRPC Mode Active:</span><br>
-                                <span class="hint-text" style="color: #eee;">Post-Quantum state transitions are dispatched natively via StatelessTransitionFrames over HTTP/3 (QUIC). No outer Secp256k1 wrapper needed!</span>
+                                <span class="hint-text" style="color: #eee; font-size: 0.62rem; display: block; margin-top: 4px; line-height: 1.4;">Post-Quantum state transitions are dispatched natively via StatelessTransitionFrames over HTTP/3 (QUIC). No outer Secp256k1 wrapper needed!</span>
                             </div>
-                        `}
+                        ` : ''}
                     ` : ''}
 
                     <!-- Account Security Policy -->
-                    <div class="section-box">
-                        <label class="field-label">Account Security Policy (ALLOW_LEGACY):</label>
-                        <label class="checkbox-row">
+                    <div class="section-box" style="margin-bottom: 15px; padding: 12px; background: #090c15; border: 1px solid #30363d; border-radius: 4px;">
+                        <label class="field-label" style="color: #ffcc00; display: block; margin-bottom: 4px; font-size: 0.68rem;">Account Security Policy (ALLOW_LEGACY):</label>
+                        <label class="checkbox-row" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                             <input
                                 type="checkbox"
+                                class="nes-checkbox is-dark"
                                 ?checked=${this.allowLegacy}
                                 @change=${(e: Event) => { this.allowLegacy = (e.target as HTMLInputElement).checked; }}
                             >
                             <span>Permit Classical Secp256k1 Transactions (ALLOW_LEGACY=true)</span>
                         </label>
-                        <span class="hint-text alert">⚠️ WARNING: Enabling this allows transactions without post-quantum signatures. Sovereign defaults to strict post-quantum security.</span>
+                        <span class="hint-text alert" style="color: #ff5555; font-size: 0.62rem; display: block; margin-top: 4px; line-height: 1.4;">⚠️ WARNING: Enabling this allows transactions without post-quantum signatures. Sovereign defaults to strict post-quantum security.</span>
                     </div>
 
                     <!-- Auto-Reclaim Timeout -->
-                    <div class="field-group">
-                        <label class="field-label">Lattice Send Auto-Reclaim Timeout (Epochs):</label>
+                    <div class="field-group" style="margin-bottom: 12px;">
+                        <label class="field-label" style="color: #ffcc00; display: block; margin-bottom: 4px; font-size: 0.68rem;">Lattice Send Auto-Reclaim Timeout (Epochs):</label>
                         <input
                             type="number"
-                            class="text-input"
+                            class="nes-input is-dark"
+                            style="font-size: 0.68rem;"
                             min="1"
                             max="1000"
                             .value=${String(this.reclaimTimeout)}
                             @change=${(e: Event) => { this.reclaimTimeout = parseInt((e.target as HTMLInputElement).value) || 10; }}
                         >
-                        <span class="hint-text">Unclaimed send transactions can be reclaimed by sender after this many epochs (32 blocks/epoch). Default: 10 epochs.</span>
+                        <span class="hint-text" style="font-size: 0.62rem; color: #8b949e; display: block; margin-top: 4px; line-height: 1.4;">Unclaimed send transactions can be reclaimed by sender after this many epochs (32 blocks/epoch). Default: 10 epochs.</span>
                     </div>
 
                     <!-- Native Currency Ticker -->
-                    <div class="field-group">
-                        <label class="field-label">Native Currency Ticker:</label>
+                    <div class="field-group" style="margin-bottom: 12px;">
+                        <label class="field-label" style="color: #ffcc00; display: block; margin-bottom: 4px; font-size: 0.68rem;">Native Currency Ticker:</label>
                         <input
                             type="text"
-                            class="text-input"
+                            class="nes-input is-dark"
+                            style="font-size: 0.68rem;"
                             .value=${this.currencyTicker}
                             @change=${(e: Event) => { this.currencyTicker = (e.target as HTMLInputElement).value || 'TBL'; }}
                         >
-                        <span class="hint-text">Configure display ticker for native balance and transactions (Default: TBL).</span>
+                        <span class="hint-text" style="font-size: 0.62rem; color: #8b949e; display: block; margin-top: 4px; line-height: 1.4;">Configure display ticker for native balance and transactions (Default: TBL).</span>
                     </div>
 
                     <!-- Custom Endpoints -->
-                    <div class="field-group">
-                        <label class="field-label">Lattice JSON-RPC Endpoint:</label>
+                    <div class="field-group" style="margin-bottom: 12px;">
+                        <label class="field-label" style="color: #ffcc00; display: block; margin-bottom: 4px; font-size: 0.68rem;">Lattice JSON-RPC Endpoint:</label>
                         <input
                             type="text"
-                            class="text-input"
+                            class="nes-input is-dark"
+                            style="font-size: 0.68rem;"
                             .value=${this.rpcEndpoint}
                             @change=${(e: Event) => { this.rpcEndpoint = (e.target as HTMLInputElement).value || '/rpc'; }}
                         >
                     </div>
-                    <div class="field-group">
-                        <label class="field-label">Iroh Storage DA Port:</label>
+                    <div class="field-group" style="margin-bottom: 12px;">
+                        <label class="field-label" style="color: #ffcc00; display: block; margin-bottom: 4px; font-size: 0.68rem;">Iroh Storage DA Port:</label>
                         <input
                             type="text"
-                            class="text-input"
+                            class="nes-input is-dark"
+                            style="font-size: 0.68rem;"
                             .value=${this.storageEndpoint}
                             @change=${(e: Event) => { this.storageEndpoint = (e.target as HTMLInputElement).value || '/storage'; }}
                         >
@@ -346,15 +364,16 @@ export class SovereignSettingsModalElement extends BaseElement {
 
                     ${this.devMode ? html`
                         <!-- Dev Tools & Cache Reset -->
-                        <div class="section-box danger-border">
+                        <div class="section-box danger-border" style="margin-bottom: 15px; padding: 12px; background: #1a1010; border: 2px dashed #ff5555; border-radius: 4px;">
                             <label style="color: #ff5555; display: block; margin-bottom: 5px; font-weight: bold;">🛠️ Developer Mode & Cache Management:</label>
-                            <span class="hint-text" style="color: #bbb; margin-bottom: 8px;">Purges temporary activitypub outbox cache, transaction history, nonces, and unconfirmed states. <strong>Preserves your encrypted keystores, private keys, and addresses.</strong></span>
-                            <button type="button" class="btn btn-danger" @click=${this.clearCache}>🧹 Clear Instance / Cache Data</button>
+                            <span class="hint-text" style="color: #bbb; margin-bottom: 8px; font-size: 0.62rem; display: block; line-height: 1.4;">Purges temporary activitypub outbox cache, transaction history, nonces, and unconfirmed states. <strong>Preserves your encrypted keystores, private keys, and addresses.</strong></span>
+                            <button type="button" class="nes-btn is-error" style="width: 100%; font-size: 0.7rem;" @click=${this.clearCache}>🧹 Clear Instance / Cache Data</button>
                         </div>
                     ` : ''}
 
-                    <div class="btn-row">
-                        <button type="button" class="btn btn-primary" @click=${this.saveAndClose}>Save & Close</button>
+                    <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                        <button type="button" class="nes-btn is-error" style="font-size: 0.7rem;" @click=${this.close}>Close</button>
+                        <button type="button" class="nes-btn is-success" style="font-size: 0.7rem;" @click=${this.saveAndClose}>Save & Close</button>
                     </div>
                 </div>
             </div>

@@ -289,13 +289,19 @@ pub struct AbsorbNote {
     pub is_reclaim: bool,
 }
 
-/// Evaporation tracking configuration for aging and uncollected notes.
+/// Evaporation and decay tracking configuration for aging and uncollected notes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoteEvaporation {
     /// Grace period in epochs before a note enters Clawback phase
     pub clawback_grace_epochs: u64,
     /// Total epochs before an unabsorbed note evaporates permanently
     pub evaporation_epochs: u64,
+    /// Per-epoch decay rate in basis points (1 bps = 0.01% = 1/10,000)
+    #[serde(default)]
+    pub decay_rate_bps: u64,
+    /// Minimum gas floor threshold (in atomic units). Notes decaying below this floor evaporate to treasury.
+    #[serde(default)]
+    pub gas_floor: alloy_primitives::U256,
 }
 
 impl Default for NoteEvaporation {
@@ -303,6 +309,8 @@ impl Default for NoteEvaporation {
         Self {
             clawback_grace_epochs: 10,
             evaporation_epochs: 100,
+            decay_rate_bps: 50, // 0.5% per epoch
+            gas_floor: alloy_primitives::U256::from(DID_REGISTRATION_GAS_FEE),
         }
     }
 }
@@ -320,6 +328,43 @@ impl NoteEvaporation {
             NotePhase::Evaporating
         } else {
             NotePhase::Evaporated
+        }
+    }
+
+    /// Computes deterministic fixed-point decayed value after grace period:
+    /// `value(e) = v0 * (1 - r)^(e - e_grace)` using integer basis points.
+    ///
+    /// If the decayed value drops below or equal to `gas_floor`, the note evaporates (`(0, true)`).
+    /// Returns `(decayed_value, is_evaporated)`.
+    #[must_use]
+    pub fn calculate_decayed_value(
+        &self,
+        initial_value: alloy_primitives::U256,
+        issuance_epoch: u64,
+        current_epoch: u64,
+    ) -> (alloy_primitives::U256, bool) {
+        let elapsed = current_epoch.saturating_sub(issuance_epoch);
+        if elapsed <= self.clawback_grace_epochs {
+            return (initial_value, false);
+        }
+
+        let decay_epochs = elapsed.saturating_sub(self.clawback_grace_epochs);
+        let bps_base = alloy_primitives::U256::from(10_000u64);
+        let rate_bps = alloy_primitives::U256::from(self.decay_rate_bps.min(10_000));
+        let factor = bps_base.saturating_sub(rate_bps);
+
+        let mut current_val = initial_value;
+        for _ in 0..decay_epochs {
+            current_val = (current_val.saturating_mul(factor)) / bps_base;
+            if current_val <= self.gas_floor {
+                return (alloy_primitives::U256::ZERO, true);
+            }
+        }
+
+        if current_val <= self.gas_floor {
+            (alloy_primitives::U256::ZERO, true)
+        } else {
+            (current_val, false)
         }
     }
 }
@@ -341,6 +386,7 @@ mod tests {
         let evap = NoteEvaporation {
             clawback_grace_epochs: 5,
             evaporation_epochs: 20,
+            ..Default::default()
         };
         assert_eq!(evap.compute_phase(10, 12), NotePhase::Native);
         assert_eq!(evap.compute_phase(10, 16), NotePhase::Clawback);
@@ -479,5 +525,37 @@ mod tests {
             nullifier_reclaim,
             derive_reclamation_nullifier(sk_spend, &salt, 43u64)
         );
+    }
+
+    #[test]
+    fn test_note_decay_fixed_point_and_gas_floor() {
+        let evap = NoteEvaporation {
+            clawback_grace_epochs: 10,
+            evaporation_epochs: 100,
+            decay_rate_bps: 1000, // 10% per epoch after grace
+            gas_floor: alloy_primitives::U256::from(50_000u64),
+        };
+
+        let initial_val = alloy_primitives::U256::from(100_000u64);
+
+        // Before or at grace period: zero decay
+        let (v_grace, evap_grace) = evap.calculate_decayed_value(initial_val, 10, 20);
+        assert_eq!(v_grace, initial_val);
+        assert!(!evap_grace);
+
+        // 1 epoch after grace (epoch 21): 100,000 * 9000 / 10000 = 90,000 > floor (50,000)
+        let (v_1, evap_1) = evap.calculate_decayed_value(initial_val, 10, 21);
+        assert_eq!(v_1, alloy_primitives::U256::from(90_000u64));
+        assert!(!evap_1);
+
+        // 2 epochs after grace (epoch 22): 90,000 * 0.9 = 81,000 > floor
+        let (v_2, evap_2) = evap.calculate_decayed_value(initial_val, 10, 22);
+        assert_eq!(v_2, alloy_primitives::U256::from(81_000u64));
+        assert!(!evap_2);
+
+        // Several epochs later: drops below floor -> Evaporated
+        let (v_evap, evap_flag) = evap.calculate_decayed_value(initial_val, 10, 30);
+        assert_eq!(v_evap, alloy_primitives::U256::ZERO);
+        assert!(evap_flag);
     }
 }

@@ -473,8 +473,9 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
     // 2. Fetch or create account frontier
     let mut frontier = reg.get_or_create_frontier(block.account);
 
-    // 3. Verify account is not locked
-    if frontier.locked {
+    // 3. Verify account is not locked (unless processing an Unlock or Reclaim payload)
+    let is_unlock_or_reclaim = matches!(&block.payload, LatticePayload::Unlock { .. } | LatticePayload::Reclaim { .. });
+    if frontier.locked && !is_unlock_or_reclaim {
         // ARCH-02: Evaluate 1-epoch timeout instead of wall-clock.
         // We use reg.current_block as the logical epoch counter.
         if reg.current_block > frontier.locked_at {
@@ -505,10 +506,11 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
         LatticePayload::ContractCall { target, .. } => *target == crate::system_registry::SYSTEM_DID_REGISTRY,
         _ => false,
     };
-    let is_claim = matches!(&block.payload, LatticePayload::Receive { .. });
+    let is_claim = matches!(&block.payload, LatticePayload::Receive { .. } | LatticePayload::AbsorbNote { .. });
+    let is_note_or_lease = matches!(&block.payload, LatticePayload::CommitNote { .. } | LatticePayload::Lease { .. } | LatticePayload::Unlock { .. } | LatticePayload::Reclaim { .. });
 
     let has_did = reg.has_registered_did(&block.account);
-    if !has_did && !is_did_reg && !is_claim {
+    if !has_did && !is_did_reg && !is_claim && !is_note_or_lease {
         return Err("No state change permitted without an on-chain DID identity: Account has not registered a DID on Slot 0");
     }
 
@@ -744,13 +746,51 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
             tracing::info!(target_account = ?note.target_account, target_slot = note.target_slot, commitment = ?note.note_commitment.commitment, "LatticeBlock CommitNote registered");
         }
         LatticePayload::AbsorbNote { absorb } => {
+            // Enforce cleared-epoch bound: reject absorb proofs older than the SMT clearing horizon
+            if absorb.epoch < reg.nullifier_smt.cleared_before_epoch() {
+                return Err("AbsorbNote rejected: epoch is older than SMT cleared-before bound");
+            }
             // Enforce epoch window replay protection (S-01)
             let min_epoch = absorb.epoch.saturating_sub(1);
             let max_epoch = absorb.epoch.saturating_add(1);
             if reg.current_epoch < min_epoch || reg.current_epoch > max_epoch {
                 return Err("AbsorbNote rejected: epoch window violation (S-01)");
             }
+            // Prevent double-spend via NullifierSmt
+            reg.nullifier_smt.insert(absorb.nullifier)
+                .map_err(|_| "AbsorbNote rejected: nullifier already consumed in NullifierSmt")?;
             tracing::info!(nullifier = ?absorb.nullifier, target_slot = absorb.target_slot, "LatticeBlock AbsorbNote processed");
+        }
+        LatticePayload::Lease { intermediate_root, duration_epochs } => {
+            let current_epoch = reg.current_epoch;
+            let balance = reg.get_account_balance(&block.account);
+            let car = reg.account_registers.entry(block.account).or_insert_with(|| {
+                crate::lattice::car_register::PolymorphicAccountRegister::new_with_default_config(block.account, balance)
+            });
+            car.lock_for_send(*intermediate_root, *duration_epochs, current_epoch)?;
+            frontier.locked = true;
+            frontier.locked_at = current_epoch;
+            tracing::info!(account = ?block.account, ?intermediate_root, duration_epochs, "LatticeBlock Lease: account locked for atomic bundle");
+        }
+        LatticePayload::Unlock { unlock_commitment } => {
+            let car = reg.account_registers.get_mut(&block.account)
+                .ok_or("Unlock failed: account register not found")?;
+            car.unlock_on_receive()?;
+            frontier.locked = false;
+            frontier.locked_at = 0;
+            tracing::info!(account = ?block.account, ?unlock_commitment, "LatticeBlock Unlock: account lock released");
+        }
+        LatticePayload::Reclaim { intermediate_root: _, expiry_epoch } => {
+            let current_epoch = reg.current_epoch;
+            if current_epoch < *expiry_epoch {
+                return Err("Reclaim rejected: lease has not expired yet");
+            }
+            let car = reg.account_registers.get_mut(&block.account)
+                .ok_or("Reclaim failed: account register not found")?;
+            car.rollback_reclaim(current_epoch)?;
+            frontier.locked = false;
+            frontier.locked_at = 0;
+            tracing::info!(account = ?block.account, "LatticeBlock Reclaim: intermediate state rolled back");
         }
     }
 
@@ -780,11 +820,15 @@ pub enum BackendType {
     SgxRevm = 0x01,
     /// Client-side Zero-Knowledge Proof (Noir UltraHonk)
     NoirUltraHonk = 0x02,
-    /// Ephemeral Encrypted Execution (Interfold E3 Ciphernode MPC/DTC)
-    InterfoldE3 = 0x03,
+    /// Mirrored Foreign Chain Mesh & Threshold Settlement
+    MeshThresholdSettlement = 0x03,
 }
 
-/// Uniform CAR transition envelope for stateless execution across SGX, Noir, and Interfold E3.
+#[deprecated(note = "Use BackendType::MeshThresholdSettlement instead")]
+#[allow(non_upper_case_globals)]
+pub const InterfoldE3: BackendType = BackendType::MeshThresholdSettlement;
+
+/// Uniform CAR transition envelope for stateless execution across SGX, Noir, and Mirrored Mesh.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StatelessTransitionFrame {
     pub account: Address,
@@ -792,6 +836,8 @@ pub struct StatelessTransitionFrame {
     pub pre_commitment: B256,
     pub post_commitment: B256,
     pub tx_data_hash: B256,
+    pub current_nonce: u64,
+    pub proposed_nonce: u64,
     pub backend: BackendType,
     pub proof_payload: Vec<u8>,
 }
@@ -810,15 +856,21 @@ impl StatelessTransitionFrame {
             compile_error!("Production build requires hardware SGX DCAP / Noir UltraHonk verifier implementation (CRIT-NEW-01).");
         }
 
+        // 1. Strict Monotonic Nonce (Eliminates Replay Attacks)
+        if self.proposed_nonce != self.current_nonce + 1 {
+            return Err("StatelessTransitionFrame: Nonce must strictly increment monotonically");
+        }
+
         if self.proof_payload.is_empty() {
             return Err("Empty proof payload in transition frame");
         }
 
-        let public_inputs = [
-            self.pre_commitment.as_slice(),
-            self.post_commitment.as_slice(),
-            self.tx_data_hash.as_slice(),
-        ].concat();
+        let mut public_inputs = Vec::with_capacity(32 * 3 + 16);
+        public_inputs.extend_from_slice(self.pre_commitment.as_slice());
+        public_inputs.extend_from_slice(self.post_commitment.as_slice());
+        public_inputs.extend_from_slice(self.tx_data_hash.as_slice());
+        public_inputs.extend_from_slice(&self.current_nonce.to_le_bytes());
+        public_inputs.extend_from_slice(&self.proposed_nonce.to_le_bytes());
 
         match self.backend {
             BackendType::SgxRevm => {
@@ -848,12 +900,12 @@ impl StatelessTransitionFrame {
                     Err("Invalid Noir UltraHonk SNARK Proof")
                 }
             }
-            BackendType::InterfoldE3 => {
-                // Verifies Threshold BLS Signature + Output Validity SNARK
+            BackendType::MeshThresholdSettlement => {
+                // Verifies Threshold BLS Signature + Output Validity SNARK / MPT Transition
                 if self.proof_payload.len() >= 32 {
                     Ok(())
                 } else {
-                    Err("Invalid Interfold E3 Threshold Settlement")
+                    Err("Invalid Mesh Threshold Settlement")
                 }
             }
         }
@@ -1288,6 +1340,8 @@ mod tests {
             pre_commitment: pre,
             post_commitment: post,
             tx_data_hash: tx_hash,
+            current_nonce: 0,
+            proposed_nonce: 1,
             backend: BackendType::SgxRevm,
             proof_payload: vec![0xfe; 64],
         };
@@ -1300,19 +1354,23 @@ mod tests {
             pre_commitment: pre,
             post_commitment: post,
             tx_data_hash: tx_hash,
+            current_nonce: 1,
+            proposed_nonce: 2,
             backend: BackendType::NoirUltraHonk,
             proof_payload: vec![0x99; 32],
         };
         assert!(noir_frame.verify(vk).is_ok());
 
-        // 3. Backend 3: InterfoldE3
+        // 3. Backend 3: MeshThresholdSettlement
         let e3_frame = StatelessTransitionFrame {
             account,
             slot_id: 6,
             pre_commitment: pre,
             post_commitment: post,
             tx_data_hash: tx_hash,
-            backend: BackendType::InterfoldE3,
+            current_nonce: 2,
+            proposed_nonce: 3,
+            backend: BackendType::MeshThresholdSettlement,
             proof_payload: vec![0xcc; 48],
         };
         assert!(e3_frame.verify(vk).is_ok());
@@ -1324,10 +1382,29 @@ mod tests {
             pre_commitment: pre,
             post_commitment: post,
             tx_data_hash: tx_hash,
+            current_nonce: 0,
+            proposed_nonce: 1,
             backend: BackendType::NoirUltraHonk,
             proof_payload: vec![],
         };
         assert!(bad_frame.verify(vk).is_err());
+
+        // Stale / replayed nonce must fail
+        let replay_frame = StatelessTransitionFrame {
+            account,
+            slot_id: 2,
+            pre_commitment: pre,
+            post_commitment: post,
+            tx_data_hash: tx_hash,
+            current_nonce: 1,
+            proposed_nonce: 1,
+            backend: BackendType::SgxRevm,
+            proof_payload: vec![0xfe; 64],
+        };
+        assert_eq!(
+            replay_frame.verify(vk).unwrap_err(),
+            "StatelessTransitionFrame: Nonce must strictly increment monotonically"
+        );
     }
 
     #[test]
@@ -1426,4 +1503,158 @@ mod tests {
         assert!(res.is_err());
         assert!(res.unwrap_err().contains("strictly configured for legacy EVM signing"));
     }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_stateless_lattice_lease_and_reclaim_lifecycle() {
+        let account = Address::repeat_byte(0x5a);
+        let registry_lock = crate::registry::get_registry();
+        {
+            let mut w = registry_lock.write().unwrap();
+            *w = crate::registry::ValidatorRegistry::default();
+            w.current_epoch = 10;
+            w.account_balances.insert(account, U256::from(5000));
+            w.address_to_did.insert(account, format!("did:sovereign:1337:{account:#x}"));
+            w.set_legacy_allowed(account, true);
+        }
+
+        // 1. Lease account state with intermediate root
+        let intermediate_root = B256::repeat_byte(0xcc);
+        let lease_block = LatticeBlock {
+            account,
+            previous_hash: B256::ZERO,
+            sequence: 1,
+            payload: LatticePayload::Lease {
+                intermediate_root,
+                duration_epochs: 5, // expires at epoch 15
+            },
+            signature: vec![0x00],
+            static_witnesses: vec![],
+        };
+        let lease_block_hash = execute_lattice_block(&lease_block).expect("lease block execution");
+
+        {
+            let mut r = registry_lock.write().unwrap();
+            let frontier = r.get_or_create_frontier(account);
+            assert!(frontier.locked);
+            assert_eq!(frontier.locked_at, 10);
+        }
+
+        // 2. Early reclaim before expiry (epoch 12 < 15) must fail
+        {
+            let mut w = registry_lock.write().unwrap();
+            w.current_epoch = 12;
+        }
+        let reclaim_block = LatticeBlock {
+            account,
+            previous_hash: lease_block_hash,
+            sequence: 2,
+            payload: LatticePayload::Reclaim {
+                intermediate_root,
+                expiry_epoch: 15,
+            },
+            signature: vec![0x00],
+            static_witnesses: vec![],
+        };
+        let res_early = execute_lattice_block(&reclaim_block);
+        assert!(res_early.is_err());
+        assert!(res_early.unwrap_err().contains("lease has not expired yet"));
+
+        // 3. Reclaim at or past expiry (epoch 16 >= 15) succeeds and un-locks account
+        {
+            let mut w = registry_lock.write().unwrap();
+            w.current_epoch = 16;
+        }
+        execute_lattice_block(&reclaim_block).expect("reclaim past expiry must succeed");
+
+        {
+            let mut r = registry_lock.write().unwrap();
+            let frontier = r.get_or_create_frontier(account);
+            assert!(!frontier.locked);
+            assert_eq!(frontier.locked_at, 0);
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_absorb_note_cleared_epoch_bound_and_double_spend() {
+        let registry_lock = crate::registry::get_registry();
+        let account = Address::repeat_byte(0x89);
+        let nullifier = B256::repeat_byte(0x77);
+
+        {
+            let mut w = registry_lock.write().unwrap();
+            *w = crate::registry::ValidatorRegistry::default();
+            w.current_epoch = 50;
+            w.nullifier_smt.set_cleared_before_epoch(45);
+            w.address_to_did.insert(account, format!("did:sovereign:1337:{account:#x}"));
+            w.set_legacy_allowed(account, true);
+        }
+
+        // 1. AbsorbNote with epoch < cleared_before_epoch (40 < 45) must be rejected
+        let block_old = LatticeBlock {
+            account,
+            previous_hash: B256::ZERO,
+            sequence: 1,
+            payload: LatticePayload::AbsorbNote {
+                absorb: crate::lattice::note::AbsorbNote {
+                    nullifier,
+                    zk_proof: Bytes::new(),
+                    target_account: account,
+                    target_slot: 2,
+                    epoch: 40,
+                    is_reclaim: false,
+                },
+            },
+            signature: vec![0x00],
+            static_witnesses: vec![],
+        };
+        let res_old = execute_lattice_block(&block_old);
+        assert!(res_old.is_err());
+        assert!(res_old.unwrap_err().contains("older than SMT cleared-before bound"));
+
+        // 2. AbsorbNote with epoch 50 (valid window 49..=51 and >= 45) succeeds
+        let block_valid = LatticeBlock {
+            account,
+            previous_hash: B256::ZERO,
+            sequence: 1,
+            payload: LatticePayload::AbsorbNote {
+                absorb: crate::lattice::note::AbsorbNote {
+                    nullifier,
+                    zk_proof: Bytes::new(),
+                    target_account: account,
+                    target_slot: 2,
+                    epoch: 50,
+                    is_reclaim: false,
+                },
+            },
+            signature: vec![0x00],
+            static_witnesses: vec![],
+        };
+        let res_valid = execute_lattice_block(&block_valid);
+        assert!(res_valid.is_ok(), "First absorb must succeed: {:?}", res_valid.err());
+
+        // 3. Replaying the same nullifier must be rejected by NullifierSmt
+        let block_replay = LatticeBlock {
+            account,
+            previous_hash: res_valid.unwrap(),
+            sequence: 2,
+            payload: LatticePayload::AbsorbNote {
+                absorb: crate::lattice::note::AbsorbNote {
+                    nullifier,
+                    zk_proof: Bytes::new(),
+                    target_account: account,
+                    target_slot: 2,
+                    epoch: 50,
+                    is_reclaim: false,
+                },
+            },
+            signature: vec![0x00],
+            static_witnesses: vec![],
+        };
+        let res_replay = execute_lattice_block(&block_replay);
+        assert!(res_replay.is_err());
+        assert!(res_replay.unwrap_err().contains("nullifier already consumed in NullifierSmt"));
+    }
 }
+

@@ -2,6 +2,7 @@
 name = "sovereign-wallet"
 version = "0.1.0"
 edition = "2021"
+license = "LGPL-2.1"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

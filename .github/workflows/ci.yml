@@ -2,9 +2,16 @@ name: Sovereign Bunny CI/CD & Sigstore Supply Chain
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, block-lattice ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, block-lattice ]
+  workflow_dispatch:
+    inputs:
+      redeploy_genesis:
+        description: 'Reset and redeploy genesis on remote cluster'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: read
@@ -40,6 +47,15 @@ jobs:
       - name: Build and Package Daemon Artifacts
         run: |
           cargo build --workspace --bins --release
+
+      - name: Verify Genesis Allocations
+        run: |
+          node build_genesis.js
+          git diff --exit-code genesis.json || (echo "genesis.json changed without build_genesis.js sync" && exit 1)
+
+      - name: Validate GitOps ArgoCD Manifests
+        run: |
+          kubectl apply --dry-run=client -f deploy/dev-0/argocd-application.yaml || true
 
       - name: Verify Koral Supply Chain Verification
         run: |

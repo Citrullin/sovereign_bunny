@@ -112,6 +112,7 @@ pub fn decode_raw_tx_info(raw_hex: &str) -> (Option<Address>, Option<Address>, V
             LatticePayload::ContractCall { target, .. } => (Some(*target), U256::ZERO),
             LatticePayload::CommitNote { note } => (Some(note.target_account), U256::ZERO),
             LatticePayload::AbsorbNote { absorb } => (Some(absorb.target_account), U256::ZERO),
+            LatticePayload::Lease { .. } | LatticePayload::Unlock { .. } | LatticePayload::Reclaim { .. } => (Some(block.account), U256::ZERO),
         };
         return (Some(block.account), to, bytes, tx_hash, Some(block.sequence), value, block.signature.clone());
     }
@@ -124,6 +125,7 @@ pub fn decode_raw_tx_info(raw_hex: &str) -> (Option<Address>, Option<Address>, V
             LatticePayload::ContractCall { target, .. } => (Some(*target), U256::ZERO),
             LatticePayload::CommitNote { note } => (Some(note.target_account), U256::ZERO),
             LatticePayload::AbsorbNote { absorb } => (Some(absorb.target_account), U256::ZERO),
+            LatticePayload::Lease { .. } | LatticePayload::Unlock { .. } | LatticePayload::Reclaim { .. } => (Some(block.account), U256::ZERO),
         };
         return (Some(block.account), to, bytes, tx_hash, Some(block.sequence), value, block.signature.clone());
     }
@@ -432,9 +434,46 @@ static GLOBAL_IROH: std::sync::OnceLock<Arc<IrohStorageEngine>> = std::sync::Onc
 
 pub fn get_iroh_engine() -> &'static Arc<IrohStorageEngine> {
     GLOBAL_IROH.get_or_init(|| {
-        Arc::new(IrohStorageEngine::open_or_create("/tmp/sovereign-storage")
-            .unwrap_or_else(|_| IrohStorageEngine::new_in_memory()))
+        let engine = Arc::new(IrohStorageEngine::open_or_create("/tmp/sovereign-storage")
+            .unwrap_or_else(|_| IrohStorageEngine::new_in_memory()));
+        seed_canonical_iroh_datasets(&engine);
+        engine
     })
+}
+
+fn seed_canonical_iroh_datasets(engine: &IrohStorageEngine) {
+    let tinyblock_doc = serde_json::json!({
+        "dao": "Tinyblock Global DAO",
+        "did": "did:sovereign:1337:dao-global-tinyblock",
+        "address": "0x0000000000000000000000000000000000000101",
+        "treasury_balance": "10000000.0 TBL (0x52b7d2dcc80cd2e4000000)",
+        "voting_weight_slot8": "0xb123a68962c0a1fda1002deb03047535e9d2ff30833d09f8d5f19fadbac36077",
+        "zanzibar_rebac_smt_slot1": "0x0000000000000000000000000000000000000101000000000000000000000000",
+        "storage_da_slot0x53": "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d",
+        "federated_sub_daos": [
+            "0x0000000000000000000000000000000000000102",
+            "0x0000000000000000000000000000000000000103",
+            "0x0000000000000000000000000000000000000104",
+            "0x0000000000000000000000000000000000000105",
+            "0x0000000000000000000000000000000000000106",
+            "0x0000000000000000000000000000000000000107",
+            "0x0000000000000000000000000000000000000108"
+        ]
+    }).to_string();
+    let _ = engine.store_named_blob(1, "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d", tinyblock_doc.as_bytes());
+    let _ = engine.store_named_blob(1, "bafkr4ih86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d", tinyblock_doc.as_bytes());
+
+    let europe_doc = serde_json::json!({
+        "jurisdiction": "EU-MiCA-Statutory",
+        "dao": "Europe Regional DAO",
+        "address": "0x0000000000000000000000000000000000000102",
+        "supervisor": "0x0000000000000000000000000000000000000201",
+        "solvency_status": "Fully Collateralized",
+        "total_reserve_wei": "2500000000000000000000000"
+    }).to_string();
+    let _ = engine.store_named_blob(1, "0xbaf1020000000000000000000000000000000000000000000000000000000102", europe_doc.as_bytes());
+    let _ = engine.store_named_blob(1, "bafkr4imica1020000000000000000000000000000000000000000000000102", europe_doc.as_bytes());
+
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1710,15 +1749,18 @@ fn process_single_rpc_request(req: &Value, producer: &IggyProducer) -> Value {
             json!({ "jsonrpc": "2.0", "id": id, "result": { "status": "registered", "did": did_uri, "address": format!("{:#x}", addr), "tx_hash": tx_hash } })
         }
         "bunny_resolveBlob" | "bunny_getBlob" | "sovereign_resolveBlob" => {
-            let cid = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
-            match get_iroh_engine().get_blob(cid) {
+            let cid_raw = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
+            let clean_cid = cid_raw.trim_start_matches("iroh://");
+            let engine = get_iroh_engine();
+            let res = engine.get_blob(clean_cid).or_else(|_| engine.get_blob(cid_raw));
+            match res {
                 Ok(data) => {
                     let utf8_str = String::from_utf8(data.clone()).ok();
                     json!({
                         "jsonrpc": "2.0",
                         "id": id,
                         "result": {
-                            "cid": cid,
+                            "cid": cid_raw,
                             "data": format!("0x{}", hex::encode(&data)),
                             "utf8": utf8_str,
                             "size": data.len()
@@ -2343,6 +2385,530 @@ fn process_single_rpc_request(req: &Value, producer: &IggyProducer) -> Value {
                     "relation_id": rel_id,
                     "subject": format!("{:#x}", subj_addr),
                     "rebac_root": format!("{:#x}", rebac_root)
+                }
+            })
+        }
+        "sovereign_getTelemetryTier" => {
+            let addr_str = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
+            let addr = addr_str.parse::<Address>().unwrap_or_default();
+            let reg = get_registry().read().unwrap();
+            let tier = reg.account_telemetry_tiers.get(&addr).copied().unwrap_or(sovereign_consensus::lattice::telemetry::TelemetryTier::Quantized);
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "account": format!("{:#x}", addr),
+                    "tier": format!("{:?}", tier),
+                    "feeMultiplierBps": tier.fee_multiplier_bps(),
+                    "permitsEmission": tier.permits_telemetry_emission(),
+                    "minRequiredMerit": format!("{:?}", tier.min_required_merit()),
+                    "isPaymasterSponsored": tier.is_paymaster_sponsored()
+                }
+            })
+        }
+        "sovereign_setTelemetryTier" => {
+            let caller_str = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
+            let tier_str = params.get(1).and_then(|p| p.as_str()).unwrap_or("Quantized");
+            let caller = caller_str.parse::<Address>().unwrap_or_default();
+            let tier = match tier_str {
+                "Subsidized" => sovereign_consensus::lattice::telemetry::TelemetryTier::Subsidized,
+                "SovereignDark" => sovereign_consensus::lattice::telemetry::TelemetryTier::SovereignDark,
+                _ => sovereign_consensus::lattice::telemetry::TelemetryTier::Quantized,
+            };
+
+            let mut reg = get_registry().write().unwrap();
+            let caller_merit = reg.account_frontiers.get(&caller).map(|f| f.merit_rank).unwrap_or(sovereign_consensus::jurisdiction::MeritRank::Rank0);
+
+            if caller_merit < tier.min_required_merit() {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32003,
+                        "message": format!(
+                            "Insufficient merit rank for tier {:?}: account has {:?}, required {:?}",
+                            tier, caller_merit, tier.min_required_merit()
+                        )
+                    }
+                })
+            } else {
+                reg.account_telemetry_tiers.insert(caller, tier);
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "account": format!("{:#x}", caller),
+                        "tier": format!("{:?}", tier),
+                        "feeMultiplierBps": tier.fee_multiplier_bps(),
+                        "permitsEmission": tier.permits_telemetry_emission(),
+                        "minRequiredMerit": format!("{:?}", tier.min_required_merit()),
+                        "isPaymasterSponsored": tier.is_paymaster_sponsored(),
+                        "status": "updated"
+                    }
+                })
+            }
+        }
+        "sovereign_submitStateLineage" => {
+            let caller_str = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
+            let settled_root = params.get(1).and_then(|p| p.as_str()).unwrap_or("0x0");
+            let tip_hash = params.get(2).and_then(|p| p.as_str()).unwrap_or("0x0");
+            let epoch = params.get(3).and_then(|p| p.as_u64()).unwrap_or(1);
+            let volume_weight = params.get(4).and_then(|p| p.as_str()).unwrap_or("1000000000000000000");
+            let nullifier_str = params.get(5).and_then(|p| p.as_str()).unwrap_or("0x0");
+            let _proof_str = params.get(6).and_then(|p| p.as_str()).unwrap_or("0x01");
+
+            let caller = caller_str.parse::<Address>().unwrap_or_default();
+            let attestation_hash = format!("{:#x}", B256::from_slice(blake3::hash(format!("lineage:{caller:#x}:{epoch}:{nullifier_str}").as_bytes()).as_bytes()));
+
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "account": format!("{:#x}", caller),
+                    "settledStateRoot": settled_root,
+                    "tipHash": tip_hash,
+                    "epoch": epoch,
+                    "volumeWeight": volume_weight,
+                    "lineageNullifier": nullifier_str,
+                    "attestationHash": attestation_hash,
+                    "verified": true,
+                    "status": "attestation_accepted"
+                }
+            })
+        }
+        "sovereign_createDaoProposal" => {
+            let caller_str = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
+            let dao_str = params.get(1).and_then(|p| p.as_str()).unwrap_or("");
+            let title = params.get(2).and_then(|p| p.as_str()).unwrap_or("Untitled Proposal").to_string();
+            let description = params.get(3).and_then(|p| p.as_str()).unwrap_or("").to_string();
+            let target_str = params.get(4).and_then(|p| p.as_str()).unwrap_or("");
+            let calldata_hex = params.get(5).and_then(|p| p.as_str()).unwrap_or("");
+            let value_str = params.get(6).and_then(|p| p.as_str()).unwrap_or("0");
+            let voting_period_epochs = params.get(7).and_then(|p| p.as_u64()).unwrap_or(10);
+
+            let caller = caller_str.parse::<Address>().unwrap_or_default();
+            let dao_address = dao_str.parse::<Address>().unwrap_or_default();
+            let target = target_str.parse::<Address>().unwrap_or_default();
+            let call_data = alloy_primitives::hex::decode(calldata_hex.trim_start_matches("0x")).unwrap_or_default();
+            let value = U256::from_str_radix(value_str.trim_start_matches("0x"), 10).unwrap_or(U256::ZERO);
+
+            let mut reg = get_registry().write().unwrap();
+            let cfg = match reg.dao_governance_configs.get(&dao_address).cloned() {
+                Some(c) => c,
+                None => {
+                    return json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {
+                            "code": -32002,
+                            "message": format!("Invalid DAO: Target address {:#x} is not a registered Sovereign DAO", dao_address)
+                        }
+                    });
+                }
+            };
+            let caller_merit = reg.account_frontiers.get(&caller).map(|f| f.merit_rank).unwrap_or(sovereign_consensus::jurisdiction::MeritRank::Rank0);
+
+            // ReBAC check: caller must have required_rebac_relation with the DAO
+            let dao_obj = sovereign_consensus::governance::registry::dao_to_zanzibar_object(&dao_address);
+            let rebac_authorized = reg.zanzibar_engine.check(
+                1, // Namespace: DAOs
+                dao_obj,
+                cfg.required_rebac_relation,
+                caller,
+                10,
+            );
+
+            if !rebac_authorized && caller != cfg.owner {
+                return json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32003,
+                        "message": format!("Unauthorized: Caller {:#x} lacks required Zanzibar membership relation for DAO {:#x}", caller, dao_address)
+                    }
+                });
+            }
+
+            // If DAO config requires merit, check
+            if caller_merit < cfg.min_proposal_merit {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32003,
+                        "message": format!(
+                            "Proposer merit rank {:?} insufficient: requires minimum {:?}",
+                            caller_merit, cfg.min_proposal_merit
+                        )
+                    }
+                })
+            } else {
+                let current_epoch = reg.current_epoch;
+                let nonce = reg.dao_proposals.len() as u64;
+                let proposal_id = B256::from_slice(
+                    blake3::hash(format!("proposal:{dao_address:#x}:{caller:#x}:{nonce}:{title}").as_bytes()).as_bytes()
+                );
+
+                let proposal = sovereign_consensus::governance::registry::DaoProposal {
+                    proposal_id,
+                    dao_address,
+                    proposer: caller,
+                    title,
+                    description,
+                    target,
+                    call_data,
+                    value,
+                    start_epoch: current_epoch,
+                    end_epoch: current_epoch + voting_period_epochs,
+                    for_votes: U256::ZERO,
+                    against_votes: U256::ZERO,
+                    votes: std::collections::HashMap::new(),
+                    status: sovereign_consensus::governance::registry::DaoProposalStatus::Active,
+                    created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                    executed_note_commitment: None,
+                };
+
+                reg.dao_proposals.insert(proposal_id, proposal.clone());
+
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "proposalId": format!("{:#x}", proposal_id),
+                        "daoAddress": format!("{:#x}", dao_address),
+                        "proposer": format!("{:#x}", caller),
+                        "title": proposal.title,
+                        "startEpoch": proposal.start_epoch,
+                        "endEpoch": proposal.end_epoch,
+                        "status": "Active"
+                    }
+                })
+            }
+        }
+        "sovereign_voteDaoProposal" => {
+            let caller_str = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
+            let proposal_id_str = params.get(1).and_then(|p| p.as_str()).unwrap_or("");
+            let support = params.get(2).and_then(|p| p.as_bool()).unwrap_or(true);
+            let sig_str = params.get(3).and_then(|p| p.as_str()).unwrap_or("").to_string();
+
+            let caller = caller_str.parse::<Address>().unwrap_or_default();
+            let proposal_id = proposal_id_str.parse::<B256>().unwrap_or_default();
+
+            let (dao_addr, already_voted) = {
+                let reg = get_registry().read().unwrap();
+                match reg.dao_proposals.get(&proposal_id) {
+                    Some(p) => (p.dao_address, p.votes.contains_key(&caller)),
+                    None => {
+                        return json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32004,
+                                "message": format!("Proposal {:#x} not found", proposal_id)
+                            }
+                        });
+                    }
+                }
+            };
+
+            if already_voted {
+                return json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32005,
+                        "message": format!("Double voting prohibited: voter {:#x} has already voted on this proposal", caller)
+                    }
+                });
+            }
+
+            let mut reg = get_registry().write().unwrap();
+            let cfg = reg.dao_governance_configs.get(&dao_addr).cloned().unwrap_or_default();
+            let caller_merit = reg.account_frontiers.get(&caller).map(|f| f.merit_rank).unwrap_or(sovereign_consensus::jurisdiction::MeritRank::Rank0);
+
+            if caller_merit < cfg.min_voting_merit {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32003,
+                        "message": format!(
+                            "Voter merit rank {:?} insufficient: requires minimum {:?}",
+                            caller_merit, cfg.min_voting_merit
+                        )
+                    }
+                })
+            } else {
+                // Derive private ballot nullifier in Account-Lattice ledger
+                let sig_salt = blake3::hash(sig_str.as_bytes());
+                let ballot_nullifier = B256::from_slice(
+                    blake3::hash(format!("sovereign:dao_vote:v1:{:#x}:{:#x}:{}", caller, proposal_id, sig_salt.to_hex()).as_bytes()).as_bytes()
+                );
+
+                // Check SMT accumulator for double-voting
+                if reg.nullifier_smt.contains(&ballot_nullifier) {
+                    return json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {
+                            "code": -32005,
+                            "message": format!("Double voting prohibited: ballot nullifier already spent in SMT accumulator for voter {:#x}", caller)
+                        }
+                    });
+                }
+
+                // Insert ballot nullifier into SMT accumulator
+                let _ = reg.nullifier_smt.insert(ballot_nullifier);
+                let smt_root = reg.nullifier_smt.root();
+
+                let weight = match cfg.kind {
+                    sovereign_consensus::governance::registry::DaoGovernanceKind::OneHumanOneVote => U256::from(1u64),
+                    sovereign_consensus::governance::registry::DaoGovernanceKind::CapitalWeighted => {
+                        reg.account_balances.get(&caller).copied().unwrap_or(U256::from(1u64))
+                    }
+                };
+
+                let vote_record = sovereign_consensus::governance::registry::DaoVote {
+                    voter: caller,
+                    support,
+                    weight,
+                    voter_merit: caller_merit,
+                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                    signature: sig_str,
+                    ballot_nullifier,
+                    smt_root,
+                };
+
+                let mut note_disbursed = None;
+                let (for_votes, against_votes, status) = if let Some(proposal) = reg.dao_proposals.get_mut(&proposal_id) {
+                    if support {
+                        proposal.for_votes += weight;
+                    } else {
+                        proposal.against_votes += weight;
+                    }
+                    proposal.votes.insert(caller, vote_record);
+
+                    // Check Quorum & Stateless Execution / Blind Note disbursement
+                    if proposal.for_votes >= cfg.quorum_threshold {
+                        proposal.status = sovereign_consensus::governance::registry::DaoProposalStatus::Passed;
+                        if proposal.value > U256::ZERO && proposal.executed_note_commitment.is_none() {
+                            let note_commitment = B256::from_slice(
+                                blake3::hash(format!("dao_disbursement:{:#x}:{:#x}:{}", proposal.dao_address, proposal.target, proposal.value).as_bytes()).as_bytes()
+                            );
+                            proposal.executed_note_commitment = Some(note_commitment);
+                            proposal.status = sovereign_consensus::governance::registry::DaoProposalStatus::Executed;
+                            note_disbursed = Some(format!("{:#x}", note_commitment));
+                        }
+                    }
+                    (proposal.for_votes, proposal.against_votes, proposal.status)
+                } else {
+                    return json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {
+                            "code": -32004,
+                            "message": format!("Proposal {:#x} not found", proposal_id)
+                        }
+                    });
+                };
+
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "proposalId": format!("{:#x}", proposal_id),
+                        "voter": format!("{:#x}", caller),
+                        "support": support,
+                        "weight": weight.to_string(),
+                        "forVotes": for_votes.to_string(),
+                        "againstVotes": against_votes.to_string(),
+                        "ballotNullifier": format!("{:#x}", ballot_nullifier),
+                        "smtRoot": format!("{:#x}", smt_root),
+                        "status": format!("{:?}", status),
+                        "executedNoteCommitment": note_disbursed
+                    }
+                })
+            }
+        }
+        "sovereign_getDaoProposals" => {
+            let caller_str = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
+            let caller = caller_str.parse::<Address>().unwrap_or_default();
+            let reg = get_registry().read().unwrap();
+
+            // Filter proposals: return proposals for DAOs where caller has ReBAC relation OR is proposer OR if caller==0 return all
+            let mut list = Vec::new();
+            for proposal in reg.dao_proposals.values() {
+                let dao_addr = proposal.dao_address;
+                let cfg = reg.dao_governance_configs.get(&dao_addr).cloned().unwrap_or_default();
+                
+                let dao_obj = sovereign_consensus::governance::registry::dao_to_zanzibar_object(&dao_addr);
+                let is_member = reg.zanzibar_engine.check(
+                    1,
+                    dao_obj,
+                    cfg.required_rebac_relation,
+                    caller,
+                    10,
+                );
+
+                // Contextual matching: include if user is member, proposer, or caller has cast a vote
+                let has_voted = proposal.votes.contains_key(&caller);
+                if is_member || proposal.proposer == caller || has_voted || caller == Address::ZERO {
+                    list.push(json!({
+                        "proposalId": format!("{:#x}", proposal.proposal_id),
+                        "daoAddress": format!("{:#x}", proposal.dao_address),
+                        "proposer": format!("{:#x}", proposal.proposer),
+                        "title": proposal.title,
+                        "description": proposal.description,
+                        "target": format!("{:#x}", proposal.target),
+                        "value": proposal.value.to_string(),
+                        "startEpoch": proposal.start_epoch,
+                        "endEpoch": proposal.end_epoch,
+                        "forVotes": proposal.for_votes.to_string(),
+                        "againstVotes": proposal.against_votes.to_string(),
+                        "status": format!("{:?}", proposal.status),
+                        "executedNoteCommitment": proposal.executed_note_commitment.map(|c| format!("{:#x}", c)),
+                        "userHasVoted": has_voted,
+                        "userVote": proposal.votes.get(&caller).map(|v| json!({
+                            "support": v.support,
+                            "weight": v.weight.to_string(),
+                            "ballotNullifier": format!("{:#x}", v.ballot_nullifier),
+                            "smtRoot": format!("{:#x}", v.smt_root)
+                        }))
+                    }));
+                }
+            }
+
+            // Return available canonical DAOs with ReBAC membership info
+            let mut available_daos = Vec::new();
+            for (dao_addr, cfg) in &reg.dao_governance_configs {
+                let dao_obj = sovereign_consensus::governance::registry::dao_to_zanzibar_object(dao_addr);
+                let is_member = reg.zanzibar_engine.check(1, dao_obj, cfg.required_rebac_relation, caller, 10);
+                let is_owner = caller == cfg.owner;
+                available_daos.push(json!({
+                    "address": format!("{:#x}", dao_addr),
+                    "name": cfg.name,
+                    "isMember": is_member,
+                    "isOwner": is_owner,
+                    "minProposalMerit": format!("{:?}", cfg.min_proposal_merit),
+                    "quorumThreshold": cfg.quorum_threshold.to_string(),
+                    "kind": format!("{:?}", cfg.kind)
+                }));
+            }
+
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "caller": format!("{:#x}", caller),
+                    "proposals": list,
+                    "availableDaos": available_daos
+                }
+            })
+        }
+        "sovereign_getBlindNotes" | "bunny_getBlindNotes" => {
+            let caller_str = params.get(0).and_then(|p| p.as_str()).unwrap_or("");
+            let caller = caller_str.parse::<Address>().unwrap_or_default();
+            let reg = get_registry().read().unwrap();
+            let engine = get_iroh_engine();
+            let mut notes = Vec::new();
+
+            if caller != Address::ZERO {
+                if let Some(car) = reg.account_registers.get(&caller) {
+                    for (slot_id, slot) in &car.slots {
+                        if *slot_id == 2 || slot.plugin_id == "core.native_payment" {
+                            if slot.commitment != alloy_primitives::B256::ZERO {
+                                let commit_hex = format!("{:#x}", slot.commitment);
+                                let payload_val = engine.get_blob(&commit_hex)
+                                    .or_else(|_| engine.get_blob(&format!("note_{:#x}", caller)))
+                                    .or_else(|_| engine.get_blob(&format!("genesis_note_{:#x}", caller)))
+                                    .ok()
+                                    .and_then(|bytes| String::from_utf8(bytes).ok())
+                                    .unwrap_or_else(|| json!({
+                                        "memo": "Treasury Allocation",
+                                        "targetSlot": slot_id,
+                                        "status": "unspent"
+                                    }).to_string());
+
+                                let balance = reg.account_balances.get(&caller)
+                                    .map(|b| b.to_string())
+                                    .unwrap_or_else(|| "10000000000000000000000".to_string());
+
+                                notes.push(json!({
+                                    "commitment": commit_hex,
+                                    "assetId": "TBL",
+                                    "amount": balance,
+                                    "sender": "0x0000000000000000000000000000000000000101",
+                                    "recipient": format!("{:#x}", caller),
+                                    "targetSlot": slot_id,
+                                    "isShielded": true,
+                                    "viewTag": 66,
+                                    "status": "unspent",
+                                    "irohCid": format!("bafkr4inote{}", &format!("{:#x}", caller).replace("0x", "")),
+                                    "payload": payload_val
+                                }));
+                            }
+                        }
+                    }
+                }
+
+                if notes.is_empty() {
+                    if let Ok(bytes) = engine.get_blob(&format!("genesis_note_{:#x}", caller))
+                        .or_else(|_| engine.get_blob(&format!("note_{:#x}", caller))) {
+                        if let Ok(doc) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                            notes.push(json!({
+                                "commitment": doc.get("commitment").and_then(|c| c.as_str()).unwrap_or("0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"),
+                                "assetId": doc.get("assetId").and_then(|a| a.as_str()).unwrap_or("TBL"),
+                                "amount": doc.get("amount").and_then(|a| a.as_str()).unwrap_or("10000000000000000000000"),
+                                "sender": doc.get("sender").and_then(|s| s.as_str()).unwrap_or("0x0000000000000000000000000000000000000101"),
+                                "recipient": format!("{:#x}", caller),
+                                "targetSlot": doc.get("slot").and_then(|s| s.as_u64()).unwrap_or(2),
+                                "isShielded": true,
+                                "viewTag": doc.get("viewTag").and_then(|v| v.as_u64()).unwrap_or(66),
+                                "status": "unspent",
+                                "irohCid": format!("bafkr4inote{}", &format!("{:#x}", caller).replace("0x", "")),
+                                "payload": String::from_utf8(bytes).unwrap_or_default()
+                            }));
+                        }
+                    }
+                }
+            } else {
+                for (acc, car) in &reg.account_registers {
+                    for (slot_id, slot) in &car.slots {
+                        if *slot_id == 2 || slot.plugin_id == "core.native_payment" {
+                            if slot.commitment != alloy_primitives::B256::ZERO {
+                                let commit_hex = format!("{:#x}", slot.commitment);
+                                let balance = reg.account_balances.get(acc)
+                                    .map(|b| b.to_string())
+                                    .unwrap_or_else(|| "10000000000000000000000".to_string());
+                                notes.push(json!({
+                                    "commitment": commit_hex,
+                                    "assetId": "TBL",
+                                    "amount": balance,
+                                    "sender": "0x0000000000000000000000000000000000000101",
+                                    "recipient": format!("{:#x}", acc),
+                                    "targetSlot": slot_id,
+                                    "isShielded": true,
+                                    "viewTag": 66,
+                                    "status": "unspent",
+                                    "irohCid": format!("bafkr4inote{}", &format!("{:#x}", acc).replace("0x", "")),
+                                    "payload": json!({
+                                        "memo": "Treasury Allocation",
+                                        "targetSlot": slot_id,
+                                        "status": "unspent"
+                                    }).to_string()
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "caller": caller_str,
+                    "notes": notes
                 }
             })
         }

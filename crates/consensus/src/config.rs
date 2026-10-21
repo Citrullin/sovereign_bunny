@@ -121,6 +121,8 @@ impl Default for NetworkGenesisConfig {
                     plugin_name: "core.did_identity".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"core.did_identity.v1"),
+                    encoding: "cbor".to_string(),
                 },
                 SlotSchemaConfig {
                     slot_id: 1,
@@ -128,6 +130,8 @@ impl Default for NetworkGenesisConfig {
                     plugin_name: "core.zanzibar".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"core.zanzibar.v1"),
+                    encoding: "cbor".to_string(),
                 },
                 SlotSchemaConfig {
                     slot_id: 2,
@@ -135,6 +139,8 @@ impl Default for NetworkGenesisConfig {
                     plugin_name: "core.native_payment".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"core.native_payment.v1"),
+                    encoding: "ssz".to_string(),
                 },
                 SlotSchemaConfig {
                     slot_id: 3,
@@ -142,6 +148,8 @@ impl Default for NetworkGenesisConfig {
                     plugin_name: "vcs.git_dag".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"vcs.git_dag.v1"),
+                    encoding: "cbor".to_string(),
                 },
                 SlotSchemaConfig {
                     slot_id: 4,
@@ -149,34 +157,44 @@ impl Default for NetworkGenesisConfig {
                     plugin_name: "ext.sqldigest".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"ext.sqldigest.v1"),
+                    encoding: "cbor".to_string(),
                 },
                 SlotSchemaConfig {
                     slot_id: 5,
-                    name: "X-Road Service Descriptor".to_string(),
-                    plugin_name: "authority.xroad_descriptor".to_string(),
+                    name: "Epoch Engine Consensus".to_string(),
+                    plugin_name: "consensus.epoch_engine".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"consensus.epoch_engine.v1"),
+                    encoding: "ssz".to_string(),
                 },
                 SlotSchemaConfig {
                     slot_id: 6,
-                    name: "Supply Chain Interface Commitment".to_string(),
-                    plugin_name: "vcs.interface_contract".to_string(),
+                    name: "Regional DAO Governance".to_string(),
+                    plugin_name: "dao.regional_matrix".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"dao.regional_matrix.v1"),
+                    encoding: "cbor".to_string(),
                 },
                 SlotSchemaConfig {
                     slot_id: 7,
-                    name: "Reputation & Merit Score".to_string(),
-                    plugin_name: "reputation.merit".to_string(),
+                    name: "Lattice Saga Lock & Policy".to_string(),
+                    plugin_name: "saga.lock_policy".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"saga.lock_policy.v1"),
+                    encoding: "ssz".to_string(),
                 },
                 SlotSchemaConfig {
                     slot_id: 8,
-                    name: "eIDAS 2.0 LOTL Root Anchor".to_string(),
-                    plugin_name: "identity.lotl_root".to_string(),
+                    name: "Operational Surety Bonds".to_string(),
+                    plugin_name: "settlement.surety_bond".to_string(),
                     version: 1,
                     activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"settlement.surety_bond.v1"),
+                    encoding: "ssz".to_string(),
                 },
             ],
             shard_genesis: ShardGenesisConfig::default(),
@@ -265,7 +283,16 @@ pub struct SlotSchemaConfig {
     pub plugin_name: String,
     pub version: u32,
     pub activation_epoch: u64,
+    #[serde(default)]
+    pub schema_hash: alloy_primitives::B256,
+    #[serde(default = "default_slot_encoding")]
+    pub encoding: String, // "ssz" or "cbor"
 }
+
+fn default_slot_encoding() -> String {
+    "cbor".to_string()
+}
+
 
 /// Static configurations loaded at startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]

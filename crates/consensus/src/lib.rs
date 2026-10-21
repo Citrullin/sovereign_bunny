@@ -33,9 +33,16 @@ pub mod execution;
 pub mod governance;
 pub mod lattice;
 pub mod mesh;
+pub mod pontes_gateway;
 pub mod pool;
 pub mod storage;
 pub mod system_contracts;
+
+pub use pontes_gateway::{
+    PontesSettlementError, PontesSettlementReceipt, PontesTriggerIntent,
+    execute_pontes_dvp_settlement, dispatch_target2_trigger, verify_netting_proof,
+};
+
 
 // Backward-compatibility aliases for existing crate consumers & tests
 pub use engine::epoch as epoch_engine;

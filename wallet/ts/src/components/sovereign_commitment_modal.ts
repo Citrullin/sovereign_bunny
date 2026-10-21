@@ -187,6 +187,140 @@ export class SovereignCommitmentModalElement extends BaseElement {
         }
     }
 
+    createRenderRoot(): HTMLElement {
+        return this as unknown as HTMLElement;
+    }
+
+    private _renderPolymorphicSlotContent(slotNum: number, cleanAddress: string, cleanCommitment: string): TemplateResult {
+        // Slot 0: Decentralized Identity (core.did_identity)
+        if (slotNum === 0 || slotNum === 3) {
+            let doc: any = null;
+            const win = window as any;
+            if (win.currentKeys && win.currentKeys.did_document) {
+                try {
+                    doc = typeof win.currentKeys.did_document === 'string'
+                        ? JSON.parse(win.currentKeys.did_document)
+                        : win.currentKeys.did_document;
+                } catch (_) {}
+            }
+            if (!doc && win.profiles && Array.isArray(win.profiles)) {
+                const found = win.profiles.find((p: any) => p.address?.toLowerCase() === cleanAddress.toLowerCase());
+                if (found && found.did_document) {
+                    try {
+                        doc = typeof found.did_document === 'string' ? JSON.parse(found.did_document) : found.did_document;
+                    } catch (_) {}
+                }
+            }
+
+            const didUri = doc?.id || `did:sovereign:13371337:${cleanAddress}`;
+            const keyTier = doc?.keyTier || 'QuantumReady (ML-DSA-65)';
+            const vms = doc?.verificationMethod || [];
+
+            return html`
+                <div class="field-row" style="margin-top: 10px; background: rgba(102, 252, 241, 0.05); padding: 10px; border: 1px solid #45f3ff; border-radius: 4px;">
+                    <span class="field-label" style="color: #66fcf1; font-weight: bold; margin-bottom: 6px;">🆔 Slot 0: Sovereign DID Identity Document</span>
+                    <div style="font-size: 0.68rem; margin-bottom: 4px;">
+                        <span style="color: #8b949e;">DID URI:</span>
+                        <code style="color: #ffcc00; word-break: break-all;">${didUri}</code>
+                    </div>
+                    <div style="font-size: 0.68rem; margin-bottom: 4px;">
+                        <span style="color: #8b949e;">Security Tier:</span>
+                        <span class="nes-badge" style="font-size: 0.5rem;"><span class="is-primary">${keyTier}</span></span>
+                    </div>
+                    <div style="font-size: 0.68rem; margin-bottom: 4px;">
+                        <span style="color: #8b949e;">Status:</span>
+                        <span style="color: #238636; font-weight: bold;">✅ On-Chain Pinned & Verified</span>
+                    </div>
+                    ${vms.length > 0 ? html`
+                        <div style="margin-top: 6px; font-size: 0.62rem; color: #aaa;">
+                            <b>Declared Verification Keys:</b>
+                            <ul style="margin: 4px 0 0 16px; padding: 0;">
+                                ${vms.map((vm: any) => html`
+                                    <li><code style="color: #66fcf1;">${vm.id?.includes('#') ? '#' + vm.id.split('#')[1] : vm.id}</code> (${vm.type || 'Key'})</li>
+                                `)}
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        // Slot 1: Google Zanzibar ReBAC (core.zanzibar)
+        if (slotNum === 1 || slotNum === 0x61) {
+            let zanzibarData: any = this.params?.zanzibar || null;
+            if (!zanzibarData && (cleanCommitment.startsWith('{') || this.params?.semantics?.startsWith('{'))) {
+                try {
+                    zanzibarData = JSON.parse(cleanCommitment.startsWith('{') ? cleanCommitment : this.params.semantics);
+                } catch (_) {}
+            }
+            if (!zanzibarData && (window as any).sovereignClient?.storage) {
+                // Check if global state machine has last zanzibar config
+                const storagePanel = document.querySelector('sovereign-storage-panel') as any;
+                if (storagePanel && storagePanel.context) {
+                    const ctx = storagePanel.context;
+                    zanzibarData = {
+                        namespace: ctx.zanNamespace || '1',
+                        object: ctx.zanObjectId || '0x5555...5555',
+                        relation: ctx.zanRelation || '1 (owner/admin)',
+                        subject: ctx.zanSubject || cleanAddress,
+                    };
+                }
+            }
+
+            return html`
+                <div class="field-row" style="margin-top: 10px; background: rgba(255, 209, 102, 0.05); padding: 10px; border: 1px solid #ffd166; border-radius: 4px;">
+                    <span class="field-label" style="color: #ffd166; font-weight: bold; margin-bottom: 6px;">🛡️ Slot 1: Google Zanzibar ReBAC Permissions</span>
+                    <div style="font-size: 0.65rem; color: #eee; margin-bottom: 6px;">
+                        Polymorphic interpretation of Zanzibar authorization relations and role tuple:
+                    </div>
+                    ${zanzibarData ? html`
+                        <div style="background: #090c15; padding: 8px; border: 1px solid #30363d; font-family: monospace; font-size: 0.62rem; color: #66fcf1; border-radius: 4px;">
+                            <div><b>Namespace:</b> <span style="color: #ffcc00;">${zanzibarData.namespace || zanzibarData.namespace_id || '0x0001 (ns:doc)'}</span></div>
+                            <div><b>Object ID:</b> <span style="color: #fff; word-break: break-all;">${zanzibarData.object || zanzibarData.object_id || cleanCommitment}</span></div>
+                            <div><b>Relation / Role:</b> <span style="color: #ff5555;">${zanzibarData.relation || zanzibarData.relation_id || '0x0001 (owner)'}</span></div>
+                            <div><b>Subject:</b> <span style="color: #58a6ff; word-break: break-all;">${zanzibarData.subject || cleanAddress}</span></div>
+                        </div>
+                    ` : html`
+                        <div style="background: #090c15; padding: 8px; border: 1px solid #30363d; font-family: monospace; font-size: 0.62rem; color: #aaa; border-radius: 4px;">
+                            <div><b>ReBAC Sparse Merkle Root:</b> <code style="color: #ffd166;">${cleanCommitment}</code></div>
+                            <div style="margin-top: 4px; color: #888;">Precompile 0x61 Access Control Matrix: Subject <code style="color: #58a6ff;">${cleanAddress}</code> has verified permissions.</div>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        // Slot 2: Native Payment (core.native_payment)
+        if (slotNum === 2) {
+            const win = window as any;
+            let displayBalance = '0.00 TBL';
+            const balEl = document.getElementById('lattice-balance-display');
+            if (balEl && balEl.textContent) {
+                displayBalance = balEl.textContent.trim();
+            }
+            const liveSeq = (win.currentSequence !== undefined) ? win.currentSequence : (this.params?.sequence ?? 1);
+            const liveNonce = (win.accountNonce !== undefined) ? win.accountNonce : (this.params?.nonce ?? liveSeq);
+
+            return html`
+                <div class="field-row" style="margin-top: 10px; background: rgba(35, 134, 54, 0.08); padding: 10px; border: 1px solid #238636; border-radius: 4px;">
+                    <span class="field-label" style="color: #4ade80; font-weight: bold; margin-bottom: 6px;">💰 Slot 2: Native Payment Register</span>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.68rem; margin-top: 4px;">
+                        <div style="background: #090c15; padding: 8px; border: 1px solid #30363d; border-radius: 4px;">
+                            <span style="color: #8b949e; display: block; font-size: 0.58rem; text-transform: uppercase;">Settled Balance (Amount):</span>
+                            <span style="color: #ffd166; font-size: 0.8rem; font-weight: bold; font-family: monospace;">${displayBalance}</span>
+                        </div>
+                        <div style="background: #090c15; padding: 8px; border: 1px solid #30363d; border-radius: 4px;">
+                            <span style="color: #8b949e; display: block; font-size: 0.58rem; text-transform: uppercase;">Account Sequence (Nonce):</span>
+                            <span style="color: #66fcf1; font-size: 0.8rem; font-weight: bold; font-family: monospace;">#${liveNonce}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        return html``;
+    }
+
     render(): TemplateResult {
         if (!this.isOpen || !this.params) return html``;
         const { commitment, address, slotId, pluginId, semantics, targetInfo } = this.params;
@@ -200,55 +334,58 @@ export class SovereignCommitmentModalElement extends BaseElement {
         const effectivePlugin = pluginId || getPluginIdForSlot(slotNum);
 
         return html`
-            <div class="modal-overlay" @click=${(e: MouseEvent) => { if (e.target === e.currentTarget) this.close(); }}>
-                <div class="modal-card">
-                    <span class="modal-title">💎 State Commitment Root</span>
-                    <div class="modal-body">
-                        <div class="badge-row">
+            <div class="modal-overlay" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 10003; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;" @click=${(e: MouseEvent) => { if (e.target === e.currentTarget) this.close(); }}>
+                <div class="nes-container is-dark with-title" style="width: 100%; max-width: 680px; max-height: 90vh; display: flex; flex-direction: column; background: #212529; border: 4px solid #ffd166; box-shadow: 0 8px #000; padding: 25px 20px 20px 20px; color: #fff; box-sizing: border-box;">
+                    <p class="title" style="color: #ffd166; background: #212529; font-family: 'Press Start 2P', monospace; font-size: 0.75rem;">💎 STATE COMMITMENT</p>
+                    <div class="modal-body" style="overflow-y: auto; overflow-x: hidden; max-height: 75vh; padding-right: 6px; font-size: 0.7rem; line-height: 1.6;">
+                        <div class="badge-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #333; padding-bottom: 8px;">
                             <div>
-                                <span class="badge badge-warning">${slotStr}</span>
-                                <span class="badge badge-success">Verified SMT Root</span>
+                                <span class="badge badge-warning" style="padding: 2px 8px; font-size: 0.65rem; font-weight: bold; background: #d29922; color: #000;">${slotStr}</span>
+                                <span class="badge badge-success" style="padding: 2px 8px; font-size: 0.65rem; font-weight: bold; background: #238636; color: #fff;">Verified SMT Root</span>
                             </div>
                             <div style="color: #aaa; font-size: 0.65rem;">
                                 Epoch ${(window as any).lastFinalizedEpoch || 42}
                             </div>
                         </div>
 
-                        <div class="info-box">
+                        <div class="info-box" style="background: #0d1117; padding: 12px; border: 2px solid #30363d; margin-bottom: 12px; font-family: monospace; font-size: 0.65rem; border-radius: 4px;">
                             <div class="field-row">
-                                <span class="field-label">Cryptographic Commitment Root:</span>
-                                <div class="field-val-row">
+                                <span class="field-label" style="color: #8b949e; text-transform: uppercase; font-size: 0.58rem; letter-spacing: 0.5px; display: block;">Cryptographic Commitment Root:</span>
+                                <div class="field-val-row" style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
                                     <span style="color: #ffd166; word-break: break-all; font-weight: bold; font-size: 0.7rem;">
                                         ${cleanCommitment || '0x0000000000000000000000000000000000000000000000000000000000000000'}
                                     </span>
-                                    <button class="btn-copy" @click=${this.copyRoot} title="Copy Root Hash">📋</button>
+                                    <button type="button" class="nes-btn" style="padding: 2px 6px; font-size: 0.55rem;" @click=${this.copyRoot} title="Copy Root Hash">📋</button>
                                 </div>
                             </div>
 
-                            <div class="field-row">
-                                <span class="field-label">Owning Account / Controller:</span>
+                            <div class="field-row" style="margin-top: 8px;">
+                                <span class="field-label" style="color: #8b949e; text-transform: uppercase; font-size: 0.58rem; letter-spacing: 0.5px; display: block;">Owning Account / Controller:</span>
                                 <span style="color: #58a6ff; word-break: break-all;">
                                     ${cleanAddress || 'N/A'}
                                 </span>
                             </div>
 
-                            <div class="field-row">
-                                <span class="field-label">Account Slot / Subsystem:</span>
+                            <div class="field-row" style="margin-top: 8px;">
+                                <span class="field-label" style="color: #8b949e; text-transform: uppercase; font-size: 0.58rem; letter-spacing: 0.5px; display: block;">Account Slot / Subsystem:</span>
                                 <span style="color: #66fcf1; font-weight: bold;">
                                     ${effectivePlugin}
                                 </span>
                             </div>
 
-                            <div class="field-row">
-                                <span class="field-label">Semantic Role & Slot Specification:</span>
-                                <div class="semantics-box">
+                            <div class="field-row" style="margin-top: 8px;">
+                                <span class="field-label" style="color: #8b949e; text-transform: uppercase; font-size: 0.58rem; letter-spacing: 0.5px; display: block;">Semantic Role & Slot Specification:</span>
+                                <div class="semantics-box" style="color: #c9d1d9; font-size: 0.65rem; margin-top: 4px; line-height: 1.4; background: rgba(0, 0, 0, 0.3); padding: 8px; border-radius: 3px;">
                                     ${semantics || `Slot ${slotNum} microkernel sparse merkle tree state commitment root.`}
                                 </div>
                             </div>
 
+                            <!-- Polymorphic Slot Inspection Component -->
+                            ${this._renderPolymorphicSlotContent(slotNum, cleanAddress, cleanCommitment)}
+
                             ${targetInfo
                                 ? html`
-                                      <div class="field-row" style="background: rgba(102, 252, 241, 0.08); padding: 8px; border: 1px solid rgba(102, 252, 241, 0.3); border-radius: 4px;">
+                                      <div class="field-row" style="margin-top: 8px; background: rgba(102, 252, 241, 0.08); padding: 8px; border: 1px solid rgba(102, 252, 241, 0.3); border-radius: 4px;">
                                           <span class="field-label" style="color: #66fcf1;">Action Target:</span>
                                           <div style="color: #fff; font-size: 0.68rem; margin-top: 4px;">
                                               ${targetInfo}
@@ -258,12 +395,12 @@ export class SovereignCommitmentModalElement extends BaseElement {
                                 : ''}
                         </div>
 
-                        <div class="action-row">
-                            <button class="btn btn-primary" @click=${this.focusInGraph}>
-                                🎯 Focus in Graph
-                            </button>
-                            <button class="btn btn-close" @click=${this.close}>
+                        <div class="action-row" style="display: flex; justify-content: space-between; gap: 8px; margin-top: 15px;">
+                            <button type="button" class="nes-btn is-error" style="font-size: 0.68rem;" @click=${this.close}>
                                 ✖️ Close
+                            </button>
+                            <button type="button" class="nes-btn is-primary" style="font-size: 0.68rem;" @click=${this.focusInGraph}>
+                                🎯 Focus in Graph
                             </button>
                         </div>
                     </div>

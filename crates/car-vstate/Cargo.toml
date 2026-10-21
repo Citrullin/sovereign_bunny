@@ -1,0 +1,28 @@
+[package]
+name = "car-vstate"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "LGPL-2.1"
+description = "Canonical 64-slot Compact Account Register (CAR) Virtual State & SIMD Diffing Engine (Rust / WASM)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+blake3 = { workspace = true }
+tiny-keccak = { workspace = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[dev-dependencies]
+sovereign-consensus = { workspace = true }
+proptest = "1.4"
+hex = "0.4"
+
+[features]
+default = ["std"]
+std = ["alloy-primitives/std", "serde/std"]
+wasm = ["wasm-bindgen"]

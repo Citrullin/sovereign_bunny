@@ -51,3 +51,22 @@ fn test_feature_scenario() {
 
 - Avoid circular aliases or empty forwarding files (`actor.rs`, `sync_committee.rs`). Use primary domain crate modules directly.
 - Avoid hardcoded ports or static IP addresses in production paths; use dynamic discovery or structured configuration.
+
+---
+
+## 5. Mandatory Real Implementations — Zero Fakes, Zero Mocks, Zero Static Fallbacks
+
+1. **NO FAKES, NO MOCKS, NO SYNTHETIC FALLBACKS**:
+   - Zero hardcoded mock arrays or fake data objects in wallet UI or consensus crates (e.g., no static `REAL_SOVEREIGN_DAOS` arrays).
+   - Real cryptographic Blind Notes with real accumulators, Noir circuits, and Groth16 ZK-proofs.
+   - Real Iroh content-addressed storage blobs fetched dynamically via CIDs / BLAKE3 roots.
+   - Real Stateless Account-Lattice with on-chain W3C DID identity (Slot 0), Zanzibar ReBAC (Slot 1), and Blind Note CAR register (Slot 2).
+
+2. **NO INSTANCE-SPECIFIC FIXED VALUES OR HARDCODED ADDRESSES**:
+   - NEVER hardcode user addresses (e.g., `0x918c...`), DAO addresses, or bypass authorization based on fixed literals in RPC handlers or components.
+   - All authorization and membership MUST be resolved dynamically via Google Zanzibar ReBAC tuples on-chain and viewing keys.
+   - Any user in genesis or newly added user with viewing keys and ReBAC relations must be discovered and verified completely dynamically.
+
+3. **REMOTE HOST AS SOLE BUILD & RUN TARGET**:
+   - All builds, compiles, tests, and deployments MUST run directly on the remote development server (`$REMOTE_HOST`), never locally.
+

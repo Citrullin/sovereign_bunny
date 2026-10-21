@@ -353,6 +353,22 @@ where
         let sender = transaction.sender();
         tracing::info!(?sender, hash = ?transaction.hash(), "ENTERING SovereignQuantumTransactionValidator::validate_transaction");
 
+        // ── Gate -1: Mempool Queue Capacity & DoS Throttling ──────────────
+        const MAX_PENDING_TXS_PER_ACCOUNT: usize = 128;
+        {
+            if let Ok(queues) = self.account_queues.lock() {
+                if let Some(queue) = queues.get(&sender) {
+                    if queue.len() >= MAX_PENDING_TXS_PER_ACCOUNT {
+                        tracing::warn!(?sender, count = queue.len(), "Rejecting transaction in pool: Per-account mempool queue limit exceeded (DoS prevention)");
+                        return TransactionValidationOutcome::Invalid(
+                            transaction,
+                            InvalidTransactionError::TxTypeNotSupported.into(),
+                        );
+                    }
+                }
+            }
+        }
+
         // ── Gate 0: Compliance check ──────────────────────────────────────
         if let Ok(reg) = registry_lock.read() {
             if let Some(frontier) = reg.account_frontiers.get(&sender) {
@@ -709,6 +725,14 @@ where
 
     fn on_new_head_block(&self, new_head: &reth_primitives_traits::SealedBlock<Self::Block>) {
         self.inner.on_new_head_block(new_head);
+        if let Ok(mut queues) = self.account_queues.lock() {
+            queues.retain(|_, queue| {
+                if queue.len() > 128 {
+                    queue.truncate(64);
+                }
+                !queue.is_empty()
+            });
+        }
     }
 }
 
@@ -1160,6 +1184,35 @@ mod tests {
         let bob_bal_claimed = compute_lattice_balance(bob, &reg, alloy_primitives::U256::from(10_000_000_000_000_000_000_000u128));
         assert_eq!(bob_bal_claimed, alloy_primitives::U256::from(10_003_000_000_000_000_000_000u128));
     }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_per_account_queue_rate_limit() {
+        use reth_transaction_pool::noop::MockTransactionValidator;
+        use reth_transaction_pool::TransactionValidator;
+
+        let tx = MockTransaction::eip1559();
+        let validator = SovereignQuantumTransactionValidator::new(MockTransactionValidator::default(), ());
+
+        // Pre-fill queue for sender to limit (128 txs)
+        {
+            let mut queues = validator.account_queues.lock().unwrap();
+            let queue = queues.entry(tx.sender()).or_default();
+            for i in 0..128 {
+                queue.push(B256::with_last_byte(i as u8));
+            }
+        }
+
+        // 129th transaction must be rejected by Gate -1 DoS throttling
+        let outcome = validator.validate_transaction(TransactionOrigin::External, tx).await;
+        match outcome {
+            TransactionValidationOutcome::Invalid(_, err) => {
+                assert!(format!("{:?}", err).contains("TxTypeNotSupported"));
+            }
+            _ => panic!("Expected Gate -1 per-account queue limit rejection"),
+        }
+    }
 }
+
 
 

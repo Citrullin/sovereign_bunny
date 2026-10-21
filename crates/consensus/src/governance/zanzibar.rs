@@ -625,4 +625,118 @@ mod tests {
         // Depth limit 0 immediately returns false:
         assert!(!engine.check(ns, obj_a, rel_member, alice, 0));
     }
+
+    #[test]
+    fn test_european_dao_department_hierarchy() {
+        let mut engine = ZanzibarGraphEngine::new();
+        let dao_root = B256::from_slice(&[
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]);
+        let eng_dept = B256::from_slice(&[
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]);
+        let mkt_dept = B256::from_slice(&[
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x04,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]);
+
+        let alice_admin = Address::repeat_byte(0x01);
+        let eng_lead = Address::repeat_byte(0x13);
+        let eng_member = Address::repeat_byte(0x23);
+        let mkt_member = Address::repeat_byte(0x24);
+        let outsider = Address::repeat_byte(0x99);
+
+        let ns = 1u16; // Namespace 1 (DAO / Organization)
+        let rel_admin = 1u16;
+        let rel_member = 4u16;
+        let rel_dept = 5u16;
+
+        // Configure organization schema with computed subject set rewrites
+        let mut rules = HashMap::new();
+        rules.insert(rel_admin, RewriteRule::This);
+        rules.insert(rel_member, RewriteRule::Union(vec![
+            RewriteRule::This,
+            RewriteRule::ComputedSubjectSet { relation_id: rel_admin },
+        ]));
+        engine.register_schema(NamespaceSchema {
+            namespace_id: ns,
+            name: "european_dao".to_string(),
+            rules,
+        });
+
+        // 1. Root admin
+        engine.add_tuple(ZanzibarTuple {
+            namespace_id: ns,
+            object: dao_root,
+            relation_id: rel_admin,
+            subject: ZanzibarSubject::User(alice_admin),
+        });
+
+        // 2. Department links to DAO
+        engine.add_tuple(ZanzibarTuple {
+            namespace_id: ns,
+            object: dao_root,
+            relation_id: rel_dept,
+            subject: ZanzibarSubject::Set {
+                namespace_id: ns,
+                object: eng_dept,
+                relation_id: rel_member,
+            },
+        });
+        engine.add_tuple(ZanzibarTuple {
+            namespace_id: ns,
+            object: dao_root,
+            relation_id: rel_dept,
+            subject: ZanzibarSubject::Set {
+                namespace_id: ns,
+                object: mkt_dept,
+                relation_id: rel_member,
+            },
+        });
+
+        // 3. Department members
+        engine.add_tuple(ZanzibarTuple {
+            namespace_id: ns,
+            object: eng_dept,
+            relation_id: rel_admin,
+            subject: ZanzibarSubject::User(eng_lead),
+        });
+        engine.add_tuple(ZanzibarTuple {
+            namespace_id: ns,
+            object: eng_dept,
+            relation_id: rel_member,
+            subject: ZanzibarSubject::User(eng_member),
+        });
+        engine.add_tuple(ZanzibarTuple {
+            namespace_id: ns,
+            object: mkt_dept,
+            relation_id: rel_member,
+            subject: ZanzibarSubject::User(mkt_member),
+        });
+
+        // Traversal Assertions:
+        // Alice is admin on DAO root
+        assert!(engine.check(ns, dao_root, rel_admin, alice_admin, 5));
+        // eng_lead has admin and member in Engineering
+        assert!(engine.check(ns, eng_dept, rel_admin, eng_lead, 5));
+        assert!(engine.check(ns, eng_dept, rel_member, eng_lead, 5));
+        // eng_member has member in Engineering, but not admin
+        assert!(engine.check(ns, eng_dept, rel_member, eng_member, 5));
+        assert!(!engine.check(ns, eng_dept, rel_admin, eng_member, 5));
+
+        // Hierarchical delegation: eng_lead and eng_member are members via dept relation
+        assert!(engine.check(ns, dao_root, rel_dept, eng_lead, 5));
+        assert!(engine.check(ns, dao_root, rel_dept, eng_member, 5));
+        assert!(engine.check(ns, dao_root, rel_dept, mkt_member, 5));
+        assert!(!engine.check(ns, dao_root, rel_dept, outsider, 5));
+
+        let root_hash = engine.compute_rebac_root();
+        assert_ne!(root_hash, B256::ZERO);
+    }
 }
+

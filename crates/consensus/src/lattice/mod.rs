@@ -11,6 +11,11 @@ pub mod nullifier_smt;
 pub mod viewing_key;
 pub mod relayer;
 pub mod data_ref;
+pub mod telemetry;
+pub mod mpt;
+pub mod sql_row_anchor;
+pub mod view_tag_scanner;
+pub mod multilateral_netting;
 
 pub use types::{LatticeBlock, LatticePayload, ReceiveBlockHeader, ReclaimSend, SendBlockHeader};
 pub use verifier::{verify_receive_stateless, verify_reclaim_send};
@@ -23,5 +28,12 @@ pub use nullifier_smt::*;
 pub use viewing_key::*;
 pub use relayer::*;
 pub use data_ref::*;
+pub use telemetry::*;
+pub use mpt::*;
+pub use sql_row_anchor::*;
+pub use view_tag_scanner::*;
+pub use multilateral_netting::*;
+
+
 
 

@@ -118,7 +118,9 @@ impl KoralVerifier for LocalKoralVerifier {
         if link.commit_oid.is_empty() {
             return Err("Git commit OID cannot be empty".to_string());
         }
-        if !link.repo_url.contains(expected_repo) {
+        let repo_clean = link.repo_url.trim_end_matches(".git").trim_end_matches('/');
+        let expected_clean = expected_repo.trim_end_matches(".git").trim_end_matches('/');
+        if repo_clean != expected_clean && !repo_clean.ends_with(&format!("/{}", expected_clean)) {
             return Err(format!("Repository mismatch: expected {}, got {}", expected_repo, link.repo_url));
         }
         if !link.signer_identity.contains(expected_signer_pattern) {
@@ -127,9 +129,16 @@ impl KoralVerifier for LocalKoralVerifier {
         if link.artifact_digest == B256::ZERO {
             return Err("Artifact digest cannot be zero".to_string());
         }
+        if link.sbom_digest == B256::ZERO {
+            return Err("CycloneDX SBOM digest cannot be zero".to_string());
+        }
+        if link.rekor_entry_uuid.is_empty() {
+            return Err("Rekor transparency log entry UUID required".to_string());
+        }
         Ok(true)
     }
 }
+
 
 /// Smart Contract Registry for Sigstore-Anchored Git Releases.
 #[derive(Debug, Clone, Default)]
@@ -211,7 +220,20 @@ mod tests {
             verified_cut_sequence: 500,
         };
 
-        assert!(verifier.verify_git_supply_chain(&link, "sovereign-bunny", "release.yml").unwrap());
+        assert!(verifier.verify_git_supply_chain(&link, "sovereign-bunny/sovereign-reth", "release.yml").unwrap());
+
+        // Negative tests:
+        let mut bad_link = link.clone();
+        bad_link.repo_url = "https://github.com/evil-attacker/sovereign-reth".to_string();
+        assert!(verifier.verify_git_supply_chain(&bad_link, "sovereign-bunny/sovereign-reth", "release.yml").is_err());
+
+        bad_link = link.clone();
+        bad_link.sbom_digest = B256::ZERO;
+        assert!(verifier.verify_git_supply_chain(&bad_link, "sovereign-bunny/sovereign-reth", "release.yml").is_err());
+
+        bad_link = link.clone();
+        bad_link.rekor_entry_uuid = String::new();
+        assert!(verifier.verify_git_supply_chain(&bad_link, "sovereign-bunny/sovereign-reth", "release.yml").is_err());
 
         let mut registry = SigstoreContractRegistry::new();
         let admin = Address::repeat_byte(0x01);
@@ -221,3 +243,4 @@ mod tests {
         assert!(registry.is_artifact_verified(&artifact_hash));
     }
 }
+

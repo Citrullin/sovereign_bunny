@@ -1,6 +1,6 @@
 import { setup, assign, createActor, ActorRefFrom } from 'xstate';
 
-export type AppTab = 'profile' | 'activitypub' | 'explorer' | 'market' | 'storage' | 'debugger';
+export type AppTab = 'profile' | 'activitypub' | 'explorer' | 'market' | 'telemetry' | 'governance' | 'storage' | 'debugger';
 
 export interface NavigationContext {
     activeTab: AppTab;
@@ -24,7 +24,7 @@ function normalizeTab(raw: string, devMode: boolean): AppTab {
     if (clean === 'storage' || clean === 'debugger') {
         return devMode ? (clean as AppTab) : 'profile';
     }
-    if (['profile', 'activitypub', 'explorer', 'market'].includes(clean)) {
+    if (['profile', 'activitypub', 'explorer', 'market', 'telemetry', 'governance'].includes(clean)) {
         return clean as AppTab;
     }
     return 'profile';

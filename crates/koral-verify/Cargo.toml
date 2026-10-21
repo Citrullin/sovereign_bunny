@@ -3,6 +3,7 @@ name = "koral-verify"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license = "LGPL-2.1"
 
 [dependencies]
 alloy-primitives = { workspace = true }

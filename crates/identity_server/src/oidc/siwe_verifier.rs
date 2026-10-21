@@ -30,9 +30,25 @@ pub fn verify_siwe(
 
     let claimed_account = Address::from(parsed.address);
 
-    // 2. Cryptographic signature verification
-    // Support mock signatures in unit testing
+    // 2. Cryptographic signature and message validation
+    // Enforce non-empty nonce for replay protection
+    if parsed.nonce.trim().is_empty() {
+        return Err("SIWE message must include a non-empty cryptographic nonce");
+    }
+
+    // Verify expiration time if present
+    if let Some(exp) = &parsed.expiration_time {
+        let now = time::OffsetDateTime::now_utc();
+        if *exp < now {
+            return Err("SIWE message has expired");
+        }
+    }
+
+    #[cfg(test)]
     let is_mock_sig = signature_hex.starts_with("0x123") || signature_hex == "mock";
+    #[cfg(not(test))]
+    let is_mock_sig = false;
+
     if !is_mock_sig {
         let sig_clean = signature_hex.trim_start_matches("0x");
         let sig_bytes = hex::decode(sig_clean).map_err(|_| "Invalid hex in SIWE signature")?;
@@ -74,16 +90,18 @@ pub fn verify_siwe(
 
     // 3. On-chain DID Registry Check (Slot 0 / 0x03)
     // 4. On-chain Zanzibar ReBAC Access Check (Slot 1 / 0x61)
-    if let Ok(reg) = sovereign_consensus::registry::get_registry().read() {
-        if !reg.has_registered_did(&claimed_account) {
-            return Err("Account has no on-chain registered DID identity (Slot 0)");
-        }
+    // Fail-closed if registry lock cannot be acquired
+    let reg = sovereign_consensus::registry::get_registry().read()
+        .map_err(|_| "Failed to acquire registry lock: internal consensus error")?;
 
-        if !expected_client_id.is_empty()
-            && !reg.zanzibar_engine.check_oidc_service_access(expected_client_id, claimed_account)
-        {
-            return Err("Zanzibar ReBAC access check failed for service (Slot 1)");
-        }
+    if !reg.has_registered_did(&claimed_account) {
+        return Err("Account has no on-chain registered DID identity (Slot 0)");
+    }
+
+    if !expected_client_id.is_empty()
+        && !reg.zanzibar_engine.check_oidc_service_access(expected_client_id, claimed_account)
+    {
+        return Err("Zanzibar ReBAC access check failed for service (Slot 1)");
     }
 
     Ok(AuthVerificationResult {

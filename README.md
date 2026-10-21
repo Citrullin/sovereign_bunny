@@ -195,3 +195,13 @@ cargo test --workspace -- --test-threads=1
 # Run the cluster and CLI test suite
 cargo test -p sovereign-cluster-tests -p bunny-cli -- --test-threads=1
 ```
+
+---
+
+## License
+
+This repository is licensed under the tiered Sovereign software licensing architecture:
+- **Core Protocol, Consensus Engine & Node Daemons**: [GNU General Public License v3.0 only](COPYING) (`GPL-3.0-only`).
+- **Client Libraries, Cryptographic Primitives & Integration Interfaces**: [GNU Lesser General Public License v2.1 only](COPYING.LESSER) (`LGPL-2.1`).
+- For commercial linking guidelines and copyleft invariants, see [LICENSE.md](LICENSE.md).
+

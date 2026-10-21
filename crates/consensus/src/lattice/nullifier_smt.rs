@@ -31,6 +31,9 @@ pub struct NullifierSmt {
     epoch_roots: HashMap<u64, B256>,
     /// Current cached root
     current_root: B256,
+    /// Cleared-epoch bound: any absorb/claim operation before this epoch is rejected
+    #[serde(default)]
+    cleared_before_epoch: u64,
 }
 
 impl NullifierSmt {
@@ -41,7 +44,20 @@ impl NullifierSmt {
             nullifiers: HashSet::new(),
             epoch_roots: HashMap::new(),
             current_root: B256::ZERO,
+            cleared_before_epoch: 0,
         }
+    }
+
+    /// Sets the cleared-epoch bound, pruning historical epoch roots strictly older than `cleared_epoch`.
+    pub fn set_cleared_before_epoch(&mut self, cleared_epoch: u64) {
+        self.cleared_before_epoch = cleared_epoch;
+        self.epoch_roots.retain(|epoch, _| *epoch >= cleared_epoch);
+    }
+
+    /// Returns the current cleared-epoch bound.
+    #[must_use]
+    pub fn cleared_before_epoch(&self) -> u64 {
+        self.cleared_before_epoch
     }
 
     /// Checks if a nullifier has already been spent.
@@ -133,5 +149,27 @@ mod tests {
         assert_eq!(r1, cp);
         assert_eq!(smt.get_epoch_root(5), Some(r1));
         assert_eq!(smt.get_epoch_root(6), None);
+    }
+
+    #[test]
+    fn test_nullifier_smt_cleared_epoch_bound() {
+        let mut smt = NullifierSmt::new();
+        let n1 = B256::repeat_byte(0x44);
+        let n2 = B256::repeat_byte(0x55);
+        let r1 = smt.insert(n1).unwrap();
+        smt.checkpoint_epoch(10);
+        let r2 = smt.insert(n2).unwrap();
+        smt.checkpoint_epoch(20);
+
+        assert_eq!(smt.get_epoch_root(10), Some(r1));
+        assert_eq!(smt.get_epoch_root(20), Some(r2));
+        assert_eq!(smt.cleared_before_epoch(), 0);
+
+        // Advance cleared_before_epoch to 15
+        smt.set_cleared_before_epoch(15);
+        assert_eq!(smt.cleared_before_epoch(), 15);
+        // Epoch 10 pruned, Epoch 20 retained
+        assert_eq!(smt.get_epoch_root(10), None);
+        assert_eq!(smt.get_epoch_root(20), Some(r2));
     }
 }

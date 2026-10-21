@@ -1,0 +1,61 @@
+# European DAO Hierarchical ReBAC Relations (Namespace 1)
+# 1 = admin, 2 = council/governor, 3 = auditor, 4 = member, 5 = sub_dao_dept
+# Department Accounts:
+# 0x0000000000000000000000000000000000000102: European DAO Root
+# 0x0000000000000000000000000000000000000103: Engineering Department
+# 0x0000000000000000000000000000000000000104: Marketing Department
+# 0x0000000000000000000000000000000000000105: Support Department
+tuples:
+  # European DAO Root Admin & Auditor
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000102"
+    relation: 1 # admin
+    subject: "did:sovereign:1337:0xa11ce00000000000000000000000000000000001" # @alice-admin
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000102"
+    relation: 3 # auditor
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000201" # BaFin
+
+  # European DAO Department Hierarchical Links
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000102"
+    relation: 5 # sub_dao_dept: Engineering
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000103"
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000102"
+    relation: 5 # sub_dao_dept: Marketing
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000104"
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000102"
+    relation: 5 # sub_dao_dept: Support
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000105"
+
+  # Engineering Department Members (0x103)
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000103"
+    relation: 1 # lead/admin
+    subject: "did:sovereign:1337:0xee01000000000000000000000000000000000001" # Eng Lead
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000103"
+    relation: 4 # member
+    subject: "did:sovereign:1337:0xee02000000000000000000000000000000000002" # Core Dev
+
+  # Marketing Department Members (0x104)
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000104"
+    relation: 1 # lead/admin
+    subject: "did:sovereign:1337:0xaa01000000000000000000000000000000000001" # Marketing Lead
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000104"
+    relation: 4 # member
+    subject: "did:sovereign:1337:0xaa02000000000000000000000000000000000002" # Growth Member
+
+  # Support Department Members (0x105)
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000105"
+    relation: 1 # lead/admin
+    subject: "did:sovereign:1337:0x5501000000000000000000000000000000000001" # Support Lead
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000105"
+    relation: 4 # member
+    subject: "did:sovereign:1337:0x5502000000000000000000000000000000000002" # Support Agent

@@ -226,6 +226,132 @@ pub struct ValidatorRegistry {
     /// Used by `process_reclaim_sends` to detect send blocks that have gone unclaimed
     /// for more than `reclaim_timeout_epochs` epochs and refund the sender.
     pub send_block_epochs: HashMap<B256, u64>,
+    /// Address of the Sovereign DAO Treasury for demurrage, surcharges, and evaporated note dust
+    pub sovereign_treasury: Address,
+    /// Governance configuration per DAO account
+    pub dao_governance_configs: HashMap<Address, DaoGovernanceConfig>,
+    /// Per-account telemetry tier configurations (Subsidized, Quantized, SovereignDark)
+    pub account_telemetry_tiers: HashMap<Address, crate::lattice::telemetry::TelemetryTier>,
+    /// Active and settled DAO proposals keyed by proposal ID hash
+    pub dao_proposals: HashMap<B256, DaoProposal>,
+    /// Cross-chain validator mesh engine for mirrored foreign chains
+    pub cross_chain_mesh: crate::mesh::cross_chain_mesh::CrossChainMeshEngine,
+    /// Canonical universal state root register for heterogeneous protocols
+    pub universal_state_registry: crate::lattice::universal_witness::UniversalStateRootRegistry,
+    /// Nullifier set of applied AI evaluated contribution digests preventing replay attacks
+    pub used_evaluation_digests: HashSet<B256>,
+}
+
+/// Governance model for a DAO account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DaoGovernanceKind {
+    /// 1-Human-1-Vote default model: zero demurrage surcharge
+    OneHumanOneVote,
+    /// Plutocratic capital-weighted model: subject to demurrage surcharge on voting capital
+    CapitalWeighted,
+}
+
+/// Dynamic demurrage and governance configuration for a DAO account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaoGovernanceConfig {
+    /// Human-readable DAO name
+    pub name: String,
+    /// Governance model (1-Human-1-Vote or CapitalWeighted)
+    pub kind: DaoGovernanceKind,
+    /// Demurrage period in epochs (e.g. 50 epochs)
+    pub demurrage_period_epochs: u64,
+    /// Demurrage rate in basis points per period (200..=500 bps = 2%..5%)
+    pub demurrage_rate_bps: u64,
+    /// Epoch of last demurrage settlement touch
+    pub last_settled_epoch: u64,
+    /// Current locked voting capital under governance
+    pub locked_voting_capital: U256,
+    /// Minimum merit rank required to submit a proposal to this DAO (default: Rank1)
+    pub min_proposal_merit: crate::jurisdiction::MeritRank,
+    /// Minimum merit rank required to cast a vote on this DAO's proposals (default: Rank0)
+    pub min_voting_merit: crate::jurisdiction::MeritRank,
+    /// Required Zanzibar ReBAC relation ID to interact with this DAO (1 = Member)
+    pub required_rebac_relation: u16,
+    /// Minimum voting weight required to reach quorum
+    pub quorum_threshold: U256,
+    /// Creator or governing owner address of the DAO
+    pub owner: Address,
+}
+
+impl Default for DaoGovernanceConfig {
+    fn default() -> Self {
+        Self {
+            name: "Sovereign DAO".to_string(),
+            kind: DaoGovernanceKind::OneHumanOneVote,
+            demurrage_period_epochs: 50,
+            demurrage_rate_bps: 300,
+            last_settled_epoch: 0,
+            locked_voting_capital: U256::ZERO,
+            min_proposal_merit: crate::jurisdiction::MeritRank::Rank1,
+            min_voting_merit: crate::jurisdiction::MeritRank::Rank0,
+            required_rebac_relation: 1, // 1 = Member
+            quorum_threshold: U256::from(10u64),
+            owner: Address::ZERO,
+        }
+    }
+}
+
+/// DAO proposal state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DaoProposalStatus {
+    Active,
+    Passed,
+    Rejected,
+    Executed,
+}
+
+/// A recorded vote on a DAO proposal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaoVote {
+    pub voter: Address,
+    pub support: bool,
+    pub weight: U256,
+    pub voter_merit: crate::jurisdiction::MeritRank,
+    pub timestamp: u64,
+    pub signature: String,
+    pub ballot_nullifier: B256,
+    pub smt_root: B256,
+}
+
+/// Contextual DAO proposal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaoProposal {
+    pub proposal_id: B256,
+    pub dao_address: Address,
+    pub proposer: Address,
+    pub title: String,
+    pub description: String,
+    pub target: Address,
+    pub call_data: Vec<u8>,
+    pub value: U256,
+    pub start_epoch: u64,
+    pub end_epoch: u64,
+    pub for_votes: U256,
+    pub against_votes: U256,
+    pub votes: HashMap<Address, DaoVote>,
+    pub status: DaoProposalStatus,
+    pub created_at: u64,
+    pub executed_note_commitment: Option<B256>,
+}
+
+/// Helper to construct canonical DAO address from 16-bit ID (e.g. 0x0101 -> 0x00...0101)
+pub fn dao_address_from_id(id: u16) -> Address {
+    let mut bytes = [0u8; 20];
+    bytes[18] = (id >> 8) as u8;
+    bytes[19] = (id & 0xff) as u8;
+    Address::from(bytes)
+}
+
+/// Helper to construct Zanzibar object ID for a DAO address
+pub fn dao_to_zanzibar_object(dao_addr: &Address) -> B256 {
+    let mut bytes = [0u8; 32];
+    bytes[..20].copy_from_slice(dao_addr.as_slice());
+    B256::from(bytes)
 }
 
 impl Default for ValidatorRegistry {
@@ -273,6 +399,10 @@ impl ValidatorRegistry {
             processed_manifold_messages: HashSet::new(),
             nullifier_smt: crate::lattice::nullifier_smt::NullifierSmt::new(),
             send_block_epochs: HashMap::new(),
+            sovereign_treasury: Address::repeat_byte(0xee),
+            dao_governance_configs: HashMap::new(),
+            account_telemetry_tiers: HashMap::new(),
+            dao_proposals: HashMap::new(),
             legacy_allowed: HashSet::new(),
             reclaim_timeout_epochs: 10,
             account_balances: HashMap::new(),
@@ -281,9 +411,145 @@ impl ValidatorRegistry {
             dao_app_anchors: HashMap::new(),
             sql_databases: HashMap::new(),
             zanzibar_engine: crate::governance::zanzibar::ZanzibarGraphEngine::new(),
+            cross_chain_mesh: crate::mesh::cross_chain_mesh::CrossChainMeshEngine::new(),
+            universal_state_registry: crate::lattice::universal_witness::UniversalStateRootRegistry::new(),
+            used_evaluation_digests: HashSet::new(),
         };
         reg.load_genesis_allocations(None);
+        reg.init_canonical_genesis_daos();
         reg
+    }
+
+    /// Advances canonical foreign chain head and registers canonical state root into Universal Registry.
+    pub fn anchor_foreign_head(
+        &mut self,
+        chain_id: u64,
+        block_number: u64,
+        block_hash: B256,
+        parent_hash: B256,
+        state_root: B256,
+        lamport_seq: u64,
+        quorum_proof: Vec<u8>,
+    ) -> Result<(), &'static str> {
+        self.cross_chain_mesh.anchor_foreign_head(
+            chain_id,
+            block_number,
+            block_hash,
+            parent_hash,
+            state_root,
+            lamport_seq,
+            quorum_proof,
+            &mut self.universal_state_registry,
+        )
+    }
+
+    /// Inscribes the 8 canonical Genesis DAOs (Global Tinyblock + 7 Regional DAOs)
+    /// into dao_governance_configs, initializes their treasury balances, and seeds Zanzibar ReBAC tuples.
+    pub fn init_canonical_genesis_daos(&mut self) {
+        let daos = [
+            (0x0101u16, "Tinyblock Global DAO", U256::from(10_000_000_000_000_000_000_000_000u128)),
+            (0x0102u16, "Europe Regional DAO", U256::from(2_500_000_000_000_000_000_000_000u128)),
+            (0x0103u16, "North America Regional DAO", U256::from(2_500_000_000_000_000_000_000_000u128)),
+            (0x0104u16, "South America Regional DAO", U256::from(2_000_000_000_000_000_000_000_000u128)),
+            (0x0105u16, "Africa Regional DAO", U256::from(2_000_000_000_000_000_000_000_000u128)),
+            (0x0106u16, "Central Asia Regional DAO", U256::from(1_500_000_000_000_000_000_000_000u128)),
+            (0x0107u16, "Asia Regional DAO", U256::from(2_500_000_000_000_000_000_000_000u128)),
+            (0x0108u16, "Oceania Regional DAO", U256::from(1_500_000_000_000_000_000_000_000u128)),
+        ];
+
+        let founder = Address::from_slice(&alloy_primitives::hex::decode("f39fd6e51aad88f6f4ce6ab8827279cfffb92266").unwrap());
+        let alice_admin = Address::from_slice(&alloy_primitives::hex::decode("a11ce00000000000000000000000000000000001").unwrap());
+        let node_op = Address::from_slice(&alloy_primitives::hex::decode("81f16dc0351d44c84234f4e4514c03ce51e6dab3").unwrap());
+        let core_manager = Address::from_slice(&alloy_primitives::hex::decode("70997970c51812dc3a010c7d01b50e0d17dc79c8").unwrap());
+        let exec_coord = Address::from_slice(&alloy_primitives::hex::decode("3c44cdddb6a900fa2b585dd299e03d12fa4293bc").unwrap());
+        let user_op = Address::from_slice(&alloy_primitives::hex::decode("918c30482462c8024ba6cf34a18ba1f8bbdb755f").unwrap());
+
+        // Inscribe user_op in frontier and balance with MeritRank::Rank2
+        self.account_balances.insert(user_op, U256::from(100_000_000_000_000_000_000_000u128));
+        self.legacy_allowed.insert(user_op);
+        let mut user_frontier = self.get_or_create_frontier(user_op);
+        user_frontier.merit_rank = crate::jurisdiction::MeritRank::Rank2;
+        self.update_frontier(user_op, user_frontier);
+
+        for (id, name, initial_treasury) in daos {
+            let addr = dao_address_from_id(id);
+            let owner = if id == 0x0101 || id == 0x0102 { user_op } else { founder };
+            self.dao_governance_configs.insert(
+                addr,
+                DaoGovernanceConfig {
+                    name: name.to_string(),
+                    kind: DaoGovernanceKind::OneHumanOneVote,
+                    demurrage_period_epochs: 50,
+                    demurrage_rate_bps: 300,
+                    last_settled_epoch: 0,
+                    locked_voting_capital: U256::ZERO,
+                    min_proposal_merit: crate::jurisdiction::MeritRank::Rank1,
+                    min_voting_merit: crate::jurisdiction::MeritRank::Rank0,
+                    required_rebac_relation: 1, // Relation 1 = Member
+                    quorum_threshold: U256::from(10u64),
+                    owner,
+                },
+            );
+
+            // Fund DAO Treasury in account_balances if not already funded
+            self.account_balances.entry(addr).or_insert(initial_treasury);
+            self.legacy_allowed.insert(addr);
+
+            // Inscribe Zanzibar ReBAC membership tuples
+            let dao_obj = dao_to_zanzibar_object(&addr);
+            // 1. Founder is member of all DAOs
+            self.zanzibar_engine.add_tuple(crate::governance::zanzibar::ZanzibarTuple {
+                namespace_id: 1,
+                object: dao_obj,
+                relation_id: 1, // Member
+                subject: crate::governance::zanzibar::ZanzibarSubject::User(founder),
+            });
+            // 2. Node operator is member of all DAOs
+            self.zanzibar_engine.add_tuple(crate::governance::zanzibar::ZanzibarTuple {
+                namespace_id: 1,
+                object: dao_obj,
+                relation_id: 1,
+                subject: crate::governance::zanzibar::ZanzibarSubject::User(node_op),
+            });
+            // 3. User operator (0x918c...) is member of all DAOs
+            self.zanzibar_engine.add_tuple(crate::governance::zanzibar::ZanzibarTuple {
+                namespace_id: 1,
+                object: dao_obj,
+                relation_id: 1,
+                subject: crate::governance::zanzibar::ZanzibarSubject::User(user_op),
+            });
+
+            if id == 0x0101 {
+                // Global DAO members
+                self.zanzibar_engine.add_tuple(crate::governance::zanzibar::ZanzibarTuple {
+                    namespace_id: 1,
+                    object: dao_obj,
+                    relation_id: 1,
+                    subject: crate::governance::zanzibar::ZanzibarSubject::User(core_manager),
+                });
+                self.zanzibar_engine.add_tuple(crate::governance::zanzibar::ZanzibarTuple {
+                    namespace_id: 1,
+                    object: dao_obj,
+                    relation_id: 1,
+                    subject: crate::governance::zanzibar::ZanzibarSubject::User(exec_coord),
+                });
+            } else if id == 0x0102 {
+                // Europe Regional DAO
+                self.zanzibar_engine.add_tuple(crate::governance::zanzibar::ZanzibarTuple {
+                    namespace_id: 1,
+                    object: dao_obj,
+                    relation_id: 1,
+                    subject: crate::governance::zanzibar::ZanzibarSubject::User(alice_admin),
+                });
+            }
+
+            // Mount CAR Register slots: Slot 1 (Zanzibar), Slot 2 (Blind Note Vault), Slot 8 (Voting Weight)
+            let rebac_root = self.zanzibar_engine.compute_rebac_root();
+            let car = self.get_or_create_register(addr);
+            let _ = car.mount_slot(1, rebac_root, B256::ZERO, "core.zanzibar".to_string());
+            let _ = car.mount_slot(2, B256::repeat_byte(0x22), B256::ZERO, "core.native_payment".to_string());
+            let _ = car.mount_slot(8, B256::repeat_byte(0x88), B256::ZERO, "dao.voting_weight".to_string());
+        }
     }
 
     /// Syncs a parsed SovereignDidDocument into the validator registry identity and PQ maps.
@@ -300,10 +566,7 @@ impl ValidatorRegistry {
         let ident = RegisteredIdentity {
             did: did_uri.clone(),
             doc: doc.clone(),
-            registered_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
+            registered_at: self.current_epoch,
         };
 
         self.address_to_did.insert(addr, did_uri.clone());
@@ -706,6 +969,57 @@ impl ValidatorRegistry {
         }
 
         to_reclaim
+    }
+
+    /// Settles accrued demurrage lazily on a capital-weighted DAO account.
+    ///
+    /// Evaluates `periods_elapsed = (current_epoch - last_settled_epoch) / demurrage_period_epochs`.
+    /// Surcharge is calculated via integer basis points: `locked_voting_capital * demurrage_rate_bps / 10,000 * periods_elapsed`.
+    /// Surcharge is debited from the DAO account and routed to `sovereign_treasury`.
+    /// 1-Human-1-Vote DAOs are exempt (zero demurrage).
+    pub fn settle_demurrage_for_dao(&mut self, dao_address: Address) -> U256 {
+        let current_epoch = self.current_epoch;
+        let mut surcharge = U256::ZERO;
+
+        if let Some(config) = self.dao_governance_configs.get_mut(&dao_address) {
+            if config.kind != DaoGovernanceKind::CapitalWeighted || config.demurrage_period_epochs == 0 {
+                return U256::ZERO;
+            }
+
+            let elapsed_epochs = current_epoch.saturating_sub(config.last_settled_epoch);
+            let periods = elapsed_epochs / config.demurrage_period_epochs;
+
+            if periods > 0 {
+                let bps_base = U256::from(10_000u64);
+                let rate = U256::from(config.demurrage_rate_bps);
+                let periods_u256 = U256::from(periods);
+
+                // surcharge = locked_voting_capital * rate * periods / 10,000
+                surcharge = (config.locked_voting_capital.saturating_mul(rate).saturating_mul(periods_u256)) / bps_base;
+
+                // Update settlement epoch checkpoint
+                config.last_settled_epoch = config.last_settled_epoch.saturating_add(periods * config.demurrage_period_epochs);
+            }
+        }
+
+        if surcharge > U256::ZERO {
+            let treasury = self.sovereign_treasury;
+            // Debit from DAO balance (or up to available balance)
+            let dao_bal = self.get_account_balance(&dao_address);
+            let actual_debit = surcharge.min(dao_bal);
+            if actual_debit > U256::ZERO {
+                self.debit_account_balance(dao_address, actual_debit);
+                self.credit_account_balance(treasury, actual_debit);
+                tracing::info!(
+                    dao = ?dao_address,
+                    treasury = ?treasury,
+                    ?actual_debit,
+                    "Pigouvian demurrage surcharge collected and routed to Sovereign DAO treasury"
+                );
+            }
+        }
+
+        surcharge
     }
 
     /// Checks if an address has explicitly declared ALLOW_LEGACY=true.
@@ -1355,5 +1669,81 @@ mod tests {
         // Disable ALLOW_LEGACY (upgrade to Quantum Secure)
         registry.set_legacy_allowed(target, false);
         assert!(!registry.is_legacy_allowed(&target));
+    }
+
+    #[test]
+    fn test_plutocratic_dao_demurrage_routing_to_treasury() {
+        let mut registry = ValidatorRegistry::default();
+        let treasury = Address::repeat_byte(0xee);
+        registry.sovereign_treasury = treasury;
+
+        let dao_one_human = Address::repeat_byte(0x01);
+        let dao_plutocratic = Address::repeat_byte(0x02);
+
+        // Fund both DAOs with 1,000,000 units
+        registry.credit_account_balance(dao_one_human, U256::from(1_000_000u64));
+        registry.credit_account_balance(dao_plutocratic, U256::from(1_000_000u64));
+        assert_eq!(registry.get_account_balance(&treasury), U256::ZERO);
+
+        // 1. OneHumanOneVote DAO: zero demurrage
+        registry.dao_governance_configs.insert(
+            dao_one_human,
+            DaoGovernanceConfig {
+                name: "Test One Human DAO".to_string(),
+                kind: DaoGovernanceKind::OneHumanOneVote,
+                demurrage_period_epochs: 50,
+                demurrage_rate_bps: 300, // 3%
+                last_settled_epoch: 10,
+                locked_voting_capital: U256::from(1_000_000u64),
+                min_proposal_merit: crate::jurisdiction::MeritRank::Rank1,
+                min_voting_merit: crate::jurisdiction::MeritRank::Rank0,
+                required_rebac_relation: 1,
+                quorum_threshold: U256::from(10u64),
+                owner: Address::ZERO,
+            },
+        );
+
+        // 2. CapitalWeighted (Plutocratic) DAO: 3% (300 bps) per 50 epochs
+        registry.dao_governance_configs.insert(
+            dao_plutocratic,
+            DaoGovernanceConfig {
+                name: "Test Plutocratic DAO".to_string(),
+                kind: DaoGovernanceKind::CapitalWeighted,
+                demurrage_period_epochs: 50,
+                demurrage_rate_bps: 300, // 3%
+                last_settled_epoch: 10,
+                locked_voting_capital: U256::from(1_000_000u64),
+                min_proposal_merit: crate::jurisdiction::MeritRank::Rank1,
+                min_voting_merit: crate::jurisdiction::MeritRank::Rank0,
+                required_rebac_relation: 1,
+                quorum_threshold: U256::from(10u64),
+                owner: Address::ZERO,
+            },
+        );
+
+        // At epoch 40 (< 1 period elapsed): 0 demurrage
+        registry.current_epoch = 40;
+        let s_hum_0 = registry.settle_demurrage_for_dao(dao_one_human);
+        let s_plu_0 = registry.settle_demurrage_for_dao(dao_plutocratic);
+        assert_eq!(s_hum_0, U256::ZERO);
+        assert_eq!(s_plu_0, U256::ZERO);
+        assert_eq!(registry.get_account_balance(&treasury), U256::ZERO);
+
+        // At epoch 65 (1 period of 50 epochs elapsed since epoch 10):
+        registry.current_epoch = 65;
+        let s_hum_1 = registry.settle_demurrage_for_dao(dao_one_human);
+        assert_eq!(s_hum_1, U256::ZERO, "1-Human-1-Vote DAO must be exempt from demurrage");
+
+        let s_plu_1 = registry.settle_demurrage_for_dao(dao_plutocratic);
+        // Surcharge = 1,000,000 * 300 / 10,000 = 30,000
+        assert_eq!(s_plu_1, U256::from(30_000u64));
+        // Treasury credited with 30,000
+        assert_eq!(registry.get_account_balance(&treasury), U256::from(30_000u64));
+        // Plutocratic DAO debited by 30,000
+        assert_eq!(registry.get_account_balance(&dao_plutocratic), U256::from(970_000u64));
+
+        // Calling again at same epoch -> 0 additional surcharge
+        let s_plu_dup = registry.settle_demurrage_for_dao(dao_plutocratic);
+        assert_eq!(s_plu_dup, U256::ZERO);
     }
 }

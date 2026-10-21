@@ -122,10 +122,22 @@ pub fn apply_contribution_evaluation(
     soulbound: &mut SoulboundToken,
     eval: &EvaluatedContribution,
 ) -> Result<(U256, MeritRank), &'static str> {
-    // 1. Verify evaluator signature
+    // 1. Self-evaluation is strictly prohibited (prevents unilateral reputation minting)
+    if eval.contributor == eval.evaluator {
+        return Err("Self-evaluation prohibited: Contributor cannot act as their own AI evaluator");
+    }
+
+    // 2. Verify evaluator signature
     eval.verify_evaluator_signature()?;
 
-    // 2. Compute merit token amount
+    // 3. Replay protection: ensure evaluated contribution digest was not already applied
+    let eval_digest = eval.digest();
+    if registry.used_evaluation_digests.contains(&eval_digest) {
+        return Err("Replay detected: Evaluated contribution already applied");
+    }
+    registry.used_evaluation_digests.insert(eval_digest);
+
+    // 4. Compute merit token amount
     let multiplier = eval.contribution.score_multiplier();
     let merit_amount_u64 = (eval.raw_units as f64 * multiplier * 1_000.0) as u64;
     let merit_token_payout = U256::from(merit_amount_u64) * U256::from(1_000_000_000_000_000u64); // 10^15 base
@@ -215,5 +227,15 @@ mod tests {
         assert!(payout > U256::ZERO);
         assert!(rank >= MeritRank::Rank0);
         assert_eq!(soulbound.balances.get(&contributor), Some(&payout));
+
+        // Replay attempt MUST fail
+        let replay_err = apply_contribution_evaluation(&mut registry, &mut soulbound, &eval);
+        assert_eq!(replay_err.unwrap_err(), "Replay detected: Evaluated contribution already applied");
+
+        // Self-evaluation attempt MUST fail
+        let mut self_eval = eval.clone();
+        self_eval.contributor = evaluator;
+        let self_eval_err = apply_contribution_evaluation(&mut registry, &mut soulbound, &self_eval);
+        assert_eq!(self_eval_err.unwrap_err(), "Self-evaluation prohibited: Contributor cannot act as their own AI evaluator");
     }
 }

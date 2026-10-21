@@ -90,7 +90,7 @@ pub struct NodeTopologyDescriptor {
 }
 
 /// Anti-Sybil Defense Engine coordinating topological and physical verification.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AntiSybilEngine {
     /// Registered node topologies indexed by validator address
     pub topologies: HashMap<Address, NodeTopologyDescriptor>,
@@ -102,10 +102,17 @@ pub struct AntiSybilEngine {
     pub min_rtt_dispersion_ms: f64,
 }
 
+impl Default for AntiSybilEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AntiSybilEngine {
     /// Creates a new `AntiSybilEngine` with default production bounds.
     #[must_use]
     pub fn new() -> Self {
+
         Self {
             topologies: HashMap::new(),
             silicon_registry: HashMap::new(),

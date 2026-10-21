@@ -30,6 +30,9 @@ pub mod rpc;
 /// OpenTelemetry correlated tracing module.
 pub mod telemetry;
 
+/// Minimal Viable Security Kernel (MVSK) module enforcing monotonic nonces and fail-closed validation.
+pub mod mvsk_kernel;
+
 use sovereign_consensus::SovereignPoolBuilder;
 use clap::Parser;
 

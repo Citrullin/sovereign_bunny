@@ -20,6 +20,7 @@ import '../components/sovereign_unlock_modal.js';
 import '../components/sovereign_onboarding_wizard.js';
 import '../components/sovereign_navigation_bar.js';
 import '../components/sovereign_storage_panel.js';
+import '../components/sovereign_governance_panel.js';
 import { createNavigationActor, NavigationActor, AppTab } from './navigation_machine.js';
 import { StorageStateMachine } from './storage_machine.js';
 
@@ -76,10 +77,22 @@ let connectedAddress: string | null = null;
 let siweSignature: string | null = null;
 let payAmountVal: string = "0.0";
 let payAsset: string = "eure_gnosis";
-let activeChainId: string = "1337";
+let activeChainId: string = "13371337";
 let pendingUnlockKeystore: any = null;
 let pendingUnlockAddress: string | null = null;
 let pendingUnlockDoc: any = null;
+
+export function getInjectedProvider(): any {
+    if (typeof window === 'undefined') return null;
+    const win = window as any;
+    if (win.rabby) return win.rabby;
+    if (win.ethereum?.providers?.length) {
+        const rabby = win.ethereum.providers.find((p: any) => p.isRabby);
+        if (rabby) return rabby;
+        return win.ethereum.providers[0];
+    }
+    return win.ethereum || null;
+}
 
 // -------------------------------------------------------------
 // IndexedDB Persistence for FileSystemDirectoryHandle
@@ -818,6 +831,7 @@ const currentDecryptedKeys = {};
 
 // Prompt native unlock modal for existing encrypted keystore (Delegated to <sovereign-unlock-modal> Lit Component / SRP)
 function promptKeystoreUnlock(address, keystoreData) {
+    (window as any).promptKeystoreUnlock = promptKeystoreUnlock;
     const wizardComp = document.querySelector('sovereign-onboarding-wizard') as any;
     if (wizardComp) wizardComp.close();
 
@@ -941,9 +955,13 @@ async function syncActiveWalletAccount() {
     }
 
     try {
+        const activeRpc = localStorage.getItem('sovereign_rpc_endpoint') || (document.getElementById('overview-rpc-endpoint-input') as HTMLInputElement)?.value || (document.getElementById('rpc-endpoint-input') as HTMLInputElement)?.value || '/rpc';
+        const activeStorage = localStorage.getItem('sovereign_storage_endpoint') || (document.getElementById('storage-endpoint-input') as HTMLInputElement)?.value || '/storage';
         window.sovereignClient = new SovereignClient(injectedProvider, {
             apiMode: walletApiMode,
-            cryptoWrap: walletCryptoWrap
+            cryptoWrap: walletCryptoWrap,
+            rpcUrl: activeRpc,
+            storageUrl: activeStorage
         });
         window.sovereignClient.onPqSignaturePrompt = window.promptPqSignature;
         await window.sovereignClient.initSigner();
@@ -1039,15 +1057,61 @@ function resetActiveAccountUIContext(targetAddress?: string | null) {
         composerComponent.sender = cleanAddr;
         if (typeof composerComponent.reset === 'function') composerComponent.reset();
     }
+
+    // Notify Sovereign Governance panel
+    const govEl = document.getElementById('sovereign-governance-panel-component') as any
+        || document.querySelector('sovereign-governance-panel') as any;
+    if (govEl) {
+        if (typeof govEl.syncAddress === 'function') govEl.syncAddress();
+        if (typeof govEl.fetchProposals === 'function') govEl.fetchProposals();
+    }
 }
 
 async function handleActiveAccountChanged(address) {
+    (window as any).handleActiveAccountChanged = handleActiveAccountChanged;
     resetActiveAccountUIContext(address);
     connectedAddress = address;
-    document.getElementById('active-wallet-address').textContent = `Rabby: ${address.substring(0, 8)}...${address.substring(38)}`;
+    (window as any).connectedAddress = address;
+    const addrBtn = document.getElementById('active-wallet-address');
+    if (addrBtn) addrBtn.textContent = `Rabby: ${address.substring(0, 8)}...${address.substring(38)}`;
     updateSecurityPolicyUI(address);
-    
     const normAddr = address.toLowerCase();
+
+    // Ensure viewing key is provisioned for active account
+    let storedVk = (window as any).sovereignClient?.storageManager?.getViewingKeys(address)?.secretKey;
+    let effectiveVk = storedVk || keccak256(toBytes(`${normAddr}_sovereign_vk`));
+    try {
+        if (!storedVk) {
+            window.sovereignClient?.storageManager?.saveViewingKeys(address, {
+                secretKey: effectiveVk,
+                address: address
+            });
+        }
+    } catch (_) {}
+
+    // Update Zodiac DAO panel viewing context with effective viewing key
+    const daoEl = document.getElementById('zodiac-dao-explorer-panel') as any;
+    if (daoEl && typeof daoEl.setActiveAddress === 'function') {
+        daoEl.setActiveAddress(address, effectiveVk);
+    }
+    const graphEl = document.getElementById('sovereign-graph-explorer') as any;
+    if (graphEl && typeof graphEl.setViewingContext === 'function') {
+        graphEl.setViewingContext(address, effectiveVk);
+    }
+    const inboxComp = document.querySelector('sovereign-note-inbox') as any;
+    if (inboxComp) {
+        inboxComp.address = address;
+        inboxComp.viewingKey = effectiveVk;
+        if (typeof inboxComp.scanNotes === 'function') {
+            inboxComp.scanNotes();
+        }
+    }
+    const govEl = document.getElementById('sovereign-governance-panel-component') as any
+        || document.querySelector('sovereign-governance-panel') as any;
+    if (govEl) {
+        if (typeof govEl.syncAddress === 'function') govEl.syncAddress();
+        if (typeof govEl.fetchProposals === 'function') govEl.fetchProposals();
+    }
 
     // 1. Check if already unlocked in active session memory
     if (currentDecryptedKeys[normAddr]) {
@@ -1332,6 +1396,7 @@ function handleWizardImportKeystore() {
 
 // EVM Connection & SIWE Sign-In
 async function connectEvmWallet() {
+(window as any).connectEvmWallet = connectEvmWallet;
     const wizardComp = document.querySelector('sovereign-onboarding-wizard') as any;
     if (wizardComp) {
         wizardComp.statusMessage = "Connecting to EVM Wallet...";
@@ -1342,20 +1407,39 @@ async function connectEvmWallet() {
         const injectedProvider = (window as any).rabby || (window as any).ethereum;
         
         if (injectedProvider) {
+            try {
+                await injectedProvider.request({
+                    method: 'wallet_requestPermissions',
+                    params: [{ eth_accounts: {} }]
+                });
+            } catch (_) {}
+
             const provider = new ethers.BrowserProvider(injectedProvider);
             await provider.send("eth_requestAccounts", []);
             
             const signer = await provider.getSigner();
             connectedAddress = await signer.getAddress();
             
-            // Dynamically fetch chain ID from connected Rabby/MetaMask instance
-            const network = await provider.getNetwork();
-            activeChainId = network.chainId.toString();
+            const rpcUrl = (document.getElementById('rpc-endpoint-input') as HTMLInputElement)?.value || "/rpc";
+            await ensureSovereignChain(injectedProvider, rpcUrl);
+
+            try {
+                const network = await provider.getNetwork();
+                if (network && network.chainId) {
+                    activeChainId = network.chainId.toString();
+                }
+            } catch (_) {}
             console.log(`Connected to Chain ID: ${activeChainId}`);
             
             const message = `Sign-In with Ethereum to Sovereign Manifold Identity\n\nAddress: ${connectedAddress}\nTimestamp: ${Date.now()}`;
             siweSignature = await signer.signMessage(message);
             
+            walletActor.send({ type: 'SET_CONNECTED_ADDRESS', address: connectedAddress });
+            const addrBtn = document.getElementById('active-wallet-address');
+            if (addrBtn) addrBtn.textContent = `Rabby: ${connectedAddress.substring(0, 8)}...${connectedAddress.substring(38)}`;
+            const addrDisplay = document.getElementById('addr-display');
+            if (addrDisplay) addrDisplay.textContent = connectedAddress;
+
             if (wizardComp) {
                 wizardComp.setConnectedAddress(connectedAddress, siweSignature);
             }
@@ -1433,10 +1517,15 @@ async function connectEvmWallet() {
                 }
             }
 
-            // If storage directory is already active, advance straight to Step 3 (password)
-            if (currentDirectory && storageMode === "native" && wizardComp) {
-                wizardComp.setStorageMode('native', currentDirectory, currentDirectory.name);
-                wizardComp.actor?.send({ type: 'NEXT_STEP' });
+            // Open wizard to onboard / derive sovereign keys for this address
+            if (wizardComp) {
+                if (!wizardComp.isOpen) {
+                    wizardComp.open();
+                }
+                if (currentDirectory && storageMode === "native") {
+                    wizardComp.setStorageMode('native', currentDirectory, currentDirectory.name);
+                    wizardComp.actor?.send({ type: 'NEXT_STEP' });
+                }
             }
         } else {
             console.warn("No injected EVM provider found.");
@@ -1598,12 +1687,19 @@ async function completeOnboarding(passwordInput?: string) {
         };
         const encryptedKeystore = await encryptData(JSON.stringify(privateKeystore), password);
 
+        const normAddr = connectedAddress.toLowerCase();
         const newProfile = {
             address: connectedAddress,
             did: didId,
             did_document: didDocument,
-            keystore: encryptedKeystore
+            keystore: encryptedKeystore,
+            auxiliary_seed: auxiliarySeed,
+            registered: false
         };
+
+        // Cache decrypted keys in active session memory so user is not prompted to enter password again
+        currentDecryptedKeys[normAddr] = newProfile;
+        currentKeys = newProfile;
 
         // Save files separately to the local directory inside an address-specific sub-folder
         if (storageMode === "native" && currentDirectory) {
@@ -1617,10 +1713,19 @@ async function completeOnboarding(passwordInput?: string) {
         profiles.push(newProfile);
         activeProfileIndex = profiles.length - 1;
         saveProfilesToLocalStorage();
-        switchProfile(activeProfileIndex);
+        updateUIWithKeys(newProfile);
+
         const wizardComp = document.querySelector('sovereign-onboarding-wizard') as any;
         if (wizardComp) wizardComp.close();
-        alert("🎉 Sovereign keys derived and securely encrypted into your storage directory!");
+
+        // Prompt real on-chain registration to Precompile 0x03 via the connected EVM wallet!
+        const injectedProvider = (window as any).rabby || (window as any).ethereum;
+        if (injectedProvider) {
+            showNesToast("🚀 Broadcasting Post-Quantum DID Registration to Precompile 0x03 via your wallet...", "info", 3000);
+            await registerDidDocumentOnChain();
+        } else {
+            showNativeAlert("🎉 Sovereign keys derived and securely encrypted into your storage directory!", "Setup Complete", "success");
+        }
     } catch (e) {
         console.error("Onboarding failed:", e);
         alert("Key derivation or DID construction failed: " + e.message);
@@ -1676,12 +1781,23 @@ function updateUIWithKeys(keys) {
     const inboxComponent = document.querySelector('sovereign-note-inbox') as any;
     if (inboxComponent) {
         inboxComponent.address = keys.address;
-        const vk = (keys as any).viewingKey || (window.sovereignClient?.storageManager?.getViewingKeys(keys.address)?.secretKey) || '';
+        const vk = (keys as any).viewingKey || (window.sovereignClient?.storageManager?.getViewingKeys(keys.address)?.secretKey) || keccak256(toBytes(`${keys.address.toLowerCase()}_sovereign_vk`));
         inboxComponent.viewingKey = vk;
+        if (typeof inboxComponent.scanNotes === 'function') {
+            inboxComponent.scanNotes();
+        }
     }
     const composerComponent = document.querySelector('sovereign-note-composer') as any;
     if (composerComponent) {
         composerComponent.sender = keys.address;
+    }
+
+    // Notify Governance panel
+    const govEl = document.getElementById('sovereign-governance-panel-component') as any
+        || document.querySelector('sovereign-governance-panel') as any;
+    if (govEl) {
+        if (typeof govEl.syncAddress === 'function') govEl.syncAddress();
+        if (typeof govEl.fetchProposals === 'function') govEl.fetchProposals();
     }
 }
 
@@ -2919,18 +3035,39 @@ window.absorbBlindNote = async function() {
         }
 
         let txHash = null;
-        try {
-            const sendRes = await callBunnyRpc("eth_sendTransaction", [{
-                from: currentKeys.address,
-                to: noteRegistryAddress,
-                data: calldataHex,
-                gas: "0x7a120"
-            }]);
-            txHash = sendRes?.result || (typeof sendRes === "string" ? sendRes : null);
-        } catch (callErr) {
-            console.warn("Direct eth_sendTransaction failed; broadcasting raw signed or simulated envelope...", callErr);
-            const rawRes = await callBunnyRpc("eth_sendRawTransaction", [calldataHex]).catch(() => null);
-            txHash = rawRes?.result || (typeof rawRes === "string" ? rawRes : null);
+        const injectedProvider = (window as any).ethereum || (window as any).rabby;
+        if (injectedProvider && typeof injectedProvider.request === 'function') {
+            try {
+                txHash = await injectedProvider.request({
+                    method: 'eth_sendTransaction',
+                    params: [{
+                        from: currentKeys.address,
+                        to: noteRegistryAddress,
+                        data: calldataHex,
+                        gas: "0x7a120"
+                    }]
+                });
+            } catch (err: any) {
+                if (err?.code === 4001 || err?.message?.includes('User rejected')) {
+                    throw new Error(`Transaction rejected by user in EVM wallet: ${err.message || err}`);
+                }
+                console.warn("Injected wallet eth_sendTransaction fallback to RPC:", err);
+            }
+        }
+        if (!txHash) {
+            try {
+                const sendRes = await callBunnyRpc("eth_sendTransaction", [{
+                    from: currentKeys.address,
+                    to: noteRegistryAddress,
+                    data: calldataHex,
+                    gas: "0x7a120"
+                }]);
+                txHash = sendRes?.result || (typeof sendRes === "string" ? sendRes : null);
+            } catch (callErr) {
+                console.warn("Direct eth_sendTransaction failed; broadcasting raw signed or simulated envelope...", callErr);
+                const rawRes = await callBunnyRpc("eth_sendRawTransaction", [calldataHex]).catch(() => null);
+                txHash = rawRes?.result || (typeof rawRes === "string" ? rawRes : null);
+            }
         }
 
         if (btn) {
@@ -3238,7 +3375,7 @@ document.getElementById('update-jurisdiction-btn').addEventListener('click', asy
             }
 
             // In modern mode, broadcast transaction proposal via Sovereign RPC
-            let txHash = "0x" + ethers.keccak256(ethers.toUtf8Bytes(callDataQ2 + Date.now())).slice(2);
+            let txHash = "0x" + ethers.keccak256(ethers.toUtf8Bytes(callDataQ2 + connectedAddress)).slice(2);
             try {
                 const res = await callBunnyRpc("eth_sendTransaction", [{
                     from: connectedAddress,
@@ -3987,7 +4124,7 @@ document.getElementById('submit-guarded-msg-btn')?.addEventListener('click', asy
     const msg = document.getElementById('guarded-msg-input')?.value || "Guarded intent";
     const logBox = document.getElementById('guarded-status-log');
 
-    const nullifier = ethers.keccak256(ethers.toUtf8Bytes(msg + ":" + Date.now()));
+    const nullifier = ethers.keccak256(ethers.toUtf8Bytes(msg + ":tier:" + tier));
     
     if (logBox) {
         logBox.innerHTML = `🛡️ Verifying Noir ZK-Reputation circuit in RAM (<1ms)...<br>
@@ -4359,6 +4496,8 @@ window.openSettingsModal = function() {
     if (modal && typeof modal.open === 'function') {
         const rpcInput = document.getElementById('rpc-endpoint-input') as HTMLInputElement | null;
         const storageInput = document.getElementById('storage-endpoint-input') as HTMLInputElement | null;
+        const savedRpc = localStorage.getItem('sovereign_rpc_endpoint');
+        const savedStorage = localStorage.getItem('sovereign_storage_endpoint');
         modal.open({
             devMode: walletDevMode,
             apiMode: walletApiMode as any,
@@ -4366,8 +4505,8 @@ window.openSettingsModal = function() {
             allowLegacy: currentSecurityPolicy?.allow_legacy ?? false,
             reclaimTimeout: 10,
             currencyTicker: window.getCurrencyTicker(),
-            rpcEndpoint: rpcInput?.value || '/rpc',
-            storageEndpoint: storageInput?.value || '/storage',
+            rpcEndpoint: savedRpc || rpcInput?.value || '/rpc',
+            storageEndpoint: savedStorage || storageInput?.value || '/storage',
         });
     }
 };
@@ -4382,6 +4521,37 @@ window.openSettingsModal = function() {
 
     walletCryptoWrap = settings.cryptoWrap;
     localStorage.setItem("sovereign_crypto_wrap", walletCryptoWrap);
+
+    (window as any).walletCryptoWrap = walletCryptoWrap;
+    (window as any).walletApiMode = walletApiMode;
+    (window as any).walletDevMode = walletDevMode;
+
+    const headerBar = document.querySelector('sovereign-header-bar') as any;
+    if (headerBar) {
+        headerBar.apiMode = walletApiMode;
+        headerBar.cryptoWrap = walletCryptoWrap;
+        headerBar.requestUpdate?.();
+    }
+
+    if (settings.rpcEndpoint) {
+        localStorage.setItem("sovereign_rpc_endpoint", settings.rpcEndpoint);
+        const rpcInput = document.getElementById('rpc-endpoint-input') as HTMLInputElement | null;
+        if (rpcInput) rpcInput.value = settings.rpcEndpoint;
+        const overviewRpc = document.getElementById('overview-rpc-endpoint-input') as HTMLInputElement | null;
+        if (overviewRpc) overviewRpc.value = settings.rpcEndpoint;
+        if (window.sovereignClient) {
+            window.sovereignClient.rpcUrl = settings.rpcEndpoint;
+        }
+    }
+
+    if (settings.storageEndpoint) {
+        localStorage.setItem("sovereign_storage_endpoint", settings.storageEndpoint);
+        const storageInput = document.getElementById('storage-endpoint-input') as HTMLInputElement | null;
+        if (storageInput) storageInput.value = settings.storageEndpoint;
+        if (window.sovereignClient) {
+            window.sovereignClient.storageUrl = settings.storageEndpoint;
+        }
+    }
 
     if (settings.currencyTicker) {
         window.setCurrencyTicker(settings.currencyTicker);
@@ -4484,6 +4654,12 @@ function initTabNavigation() {
             initGraphExplorer();
             if (connectedAddress) {
                 loadAccountTransactions(connectedAddress);
+            }
+        }
+        if (tab === 'telemetry') {
+            const telemetryPanel = document.querySelector('sovereign-telemetry-panel') as any;
+            if (telemetryPanel && typeof telemetryPanel.refreshTier === 'function') {
+                telemetryPanel.refreshTier();
             }
         }
     }
@@ -5314,9 +5490,13 @@ async function initAppConfig() {
 function initSovereignComponents() {
     if (!window.sovereignClient) {
         const injectedProvider = window.rabby || window.ethereum || null;
+        const activeRpc = localStorage.getItem('sovereign_rpc_endpoint') || (document.getElementById('overview-rpc-endpoint-input') as HTMLInputElement)?.value || (document.getElementById('rpc-endpoint-input') as HTMLInputElement)?.value || '/rpc';
+        const activeStorage = localStorage.getItem('sovereign_storage_endpoint') || (document.getElementById('storage-endpoint-input') as HTMLInputElement)?.value || '/storage';
         window.sovereignClient = new SovereignClient(injectedProvider, {
             apiMode: walletApiMode,
-            cryptoWrap: walletCryptoWrap
+            cryptoWrap: walletCryptoWrap,
+            rpcUrl: activeRpc,
+            storageUrl: activeStorage
         });
         window.sovereignClient.onPqSignaturePrompt = window.promptPqSignature;
     }
@@ -5350,6 +5530,14 @@ function initSovereignComponents() {
         initOnboardingWizard(wizardEl);
     }
     initCheckoutModal();
+
+    if (!(window as any).__walletActionRequestedBound) {
+        (window as any).__walletActionRequestedBound = true;
+        document.addEventListener('wallet-action-requested', async (e: any) => {
+            console.log('[App] wallet-action-requested event received:', e?.detail);
+            await connectEvmWallet();
+        });
+    }
 }
 
 if (document.readyState === 'loading') {

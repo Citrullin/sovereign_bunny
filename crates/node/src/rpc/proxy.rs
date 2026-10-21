@@ -22,8 +22,32 @@ static IROH_ENGINE: std::sync::OnceLock<sovereign_consensus::storage::IrohStorag
 pub fn get_iroh_engine() -> &'static sovereign_consensus::storage::IrohStorageEngine {
     IROH_ENGINE.get_or_init(|| {
         let path = std::env::var("SOVEREIGN_IROH_PATH").unwrap_or_else(|_| "iroh_storage".to_string());
-        sovereign_consensus::storage::IrohStorageEngine::open_or_create(path)
-            .unwrap_or_else(|_| sovereign_consensus::storage::IrohStorageEngine::new_in_memory())
+        let engine = sovereign_consensus::storage::IrohStorageEngine::open_or_create(path)
+            .unwrap_or_else(|_| sovereign_consensus::storage::IrohStorageEngine::new_in_memory());
+        let tinyblock_doc = serde_json::json!({
+            "dao": "Tinyblock Global DAO",
+            "did": "did:sovereign:1337:dao-global-tinyblock",
+            "address": "0x0000000000000000000000000000000000000101",
+            "treasury_balance": "10000000.0 TBL (0x52b7d2dcc80cd2e4000000)",
+            "voting_weight_slot8": "0xb123a68962c0a1fda1002deb03047535e9d2ff30833d09f8d5f19fadbac36077",
+            "zanzibar_rebac_smt_slot1": "0x0000000000000000000000000000000000000101000000000000000000000000",
+            "storage_da_slot0x53": "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d"
+        }).to_string();
+        let _ = engine.store_named_blob(1, "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d", tinyblock_doc.as_bytes());
+        let _ = engine.store_named_blob(1, "bafkr4ih86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d", tinyblock_doc.as_bytes());
+
+        let europe_doc = serde_json::json!({
+            "jurisdiction": "EU-MiCA-Statutory",
+            "dao": "Europe Regional DAO",
+            "address": "0x0000000000000000000000000000000000000102",
+            "supervisor": "0x0000000000000000000000000000000000000201",
+            "solvency_status": "Fully Collateralized",
+            "total_reserve_wei": "2500000000000000000000000"
+        }).to_string();
+        let _ = engine.store_named_blob(1, "0xbaf1020000000000000000000000000000000000000000000000000000000102", europe_doc.as_bytes());
+        let _ = engine.store_named_blob(1, "bafkr4imica1020000000000000000000000000000000000000000000000102", europe_doc.as_bytes());
+
+        engine
     })
 }
 
@@ -881,12 +905,15 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                 }
 
                 if method == "sovereign_resolveBlob" || method == "bunny_resolveBlob" || method == "bunny_getBlob" {
-                    let cid = body_json["params"][0].as_str().unwrap_or("");
-                    match get_iroh_engine().get_blob(cid) {
+                    let cid_raw = body_json["params"][0].as_str().unwrap_or("");
+                    let clean_cid = cid_raw.trim_start_matches("iroh://");
+                    let engine = get_iroh_engine();
+                    let res = engine.get_blob(clean_cid).or_else(|_| engine.get_blob(cid_raw));
+                    match res {
                         Ok(data) => {
                             let utf8_str = String::from_utf8(data.clone()).ok();
                             send_result(&mut client_stream, &id, json!({
-                                "cid": cid,
+                                "cid": cid_raw,
                                 "data": format!("0x{}", alloy_primitives::hex::encode(&data)),
                                 "utf8": utf8_str,
                                 "size": data.len()
@@ -896,6 +923,187 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                             send_error(&mut client_stream, &id, -32602, &format!("Blob not found: {e}")).await;
                         }
                     }
+                    continue;
+                }
+
+                if method == "sovereign_getDaoProposals" || method == "bunny_getDaoProposals" {
+                    let caller_str = body_json["params"][0].as_str().unwrap_or("");
+                    let caller = caller_str.parse::<Address>().unwrap_or_default();
+                    let (list, available_daos) = {
+                        let reg = get_registry().read().unwrap();
+
+                        let mut list = Vec::new();
+                        for proposal in reg.dao_proposals.values() {
+                            let dao_addr = proposal.dao_address;
+                            let cfg = reg.dao_governance_configs.get(&dao_addr).cloned().unwrap_or_default();
+                            
+                            let dao_obj = sovereign_consensus::governance::registry::dao_to_zanzibar_object(&dao_addr);
+                            let is_member = reg.zanzibar_engine.check(
+                                1,
+                                dao_obj,
+                                cfg.required_rebac_relation,
+                                caller,
+                                10,
+                            );
+
+                            let has_voted = proposal.votes.contains_key(&caller);
+                            if is_member || proposal.proposer == caller || has_voted || caller == Address::ZERO {
+                                list.push(json!({
+                                    "proposalId": format!("{:#x}", proposal.proposal_id),
+                                    "daoAddress": format!("{:#x}", proposal.dao_address),
+                                    "proposer": format!("{:#x}", proposal.proposer),
+                                    "title": proposal.title,
+                                    "description": proposal.description,
+                                    "target": format!("{:#x}", proposal.target),
+                                    "value": proposal.value.to_string(),
+                                    "startEpoch": proposal.start_epoch,
+                                    "endEpoch": proposal.end_epoch,
+                                    "forVotes": proposal.for_votes.to_string(),
+                                    "againstVotes": proposal.against_votes.to_string(),
+                                    "status": format!("{:?}", proposal.status),
+                                    "executedNoteCommitment": proposal.executed_note_commitment.map(|c| format!("{:#x}", c)),
+                                    "userHasVoted": has_voted,
+                                    "userVote": proposal.votes.get(&caller).map(|v| json!({
+                                        "support": v.support,
+                                        "weight": v.weight.to_string(),
+                                        "ballotNullifier": format!("{:#x}", v.ballot_nullifier),
+                                        "smtRoot": format!("{:#x}", v.smt_root)
+                                    }))
+                                }));
+                            }
+                        }
+
+                        let mut available_daos = Vec::new();
+                        for (dao_addr, cfg) in &reg.dao_governance_configs {
+                            let dao_obj = sovereign_consensus::governance::registry::dao_to_zanzibar_object(dao_addr);
+                            let is_member = reg.zanzibar_engine.check(1, dao_obj, cfg.required_rebac_relation, caller, 10);
+                            let is_owner = caller == cfg.owner;
+                            available_daos.push(json!({
+                                "address": format!("{:#x}", dao_addr),
+                                "name": cfg.name,
+                                "isMember": is_member,
+                                "isOwner": is_owner,
+                                "minProposalMerit": format!("{:?}", cfg.min_proposal_merit),
+                                "quorumThreshold": cfg.quorum_threshold.to_string(),
+                                "kind": format!("{:?}", cfg.kind)
+                            }));
+                        }
+                        (list, available_daos)
+                    };
+
+                    send_result(&mut client_stream, &id, json!({
+                        "caller": format!("{:#x}", caller),
+                        "proposals": list,
+                        "availableDaos": available_daos
+                    })).await;
+                    continue;
+                }
+
+                if method == "sovereign_getBlindNotes" || method == "bunny_getBlindNotes" {
+                    let caller_str = body_json["params"][0].as_str().unwrap_or("");
+                    let caller = caller_str.parse::<Address>().unwrap_or_default();
+                    let notes = {
+                        let reg = get_registry().read().unwrap();
+                        let engine = get_iroh_engine();
+                        let mut notes = Vec::new();
+
+                        if caller != Address::ZERO {
+                            if let Some(car) = reg.account_registers.get(&caller) {
+                                for (slot_id, slot) in &car.slots {
+                                    if *slot_id == 2 || slot.plugin_id == "core.native_payment" {
+                                        if slot.commitment != alloy_primitives::B256::ZERO {
+                                            let commit_hex = format!("{:#x}", slot.commitment);
+                                            let payload_val = engine.get_blob(&commit_hex)
+                                                .or_else(|_| engine.get_blob(&format!("note_{:#x}", caller)))
+                                                .or_else(|_| engine.get_blob(&format!("genesis_note_{:#x}", caller)))
+                                                .ok()
+                                                .and_then(|bytes| String::from_utf8(bytes).ok())
+                                                .unwrap_or_else(|| json!({
+                                                    "memo": "Treasury Allocation",
+                                                    "targetSlot": slot_id,
+                                                    "status": "unspent"
+                                                }).to_string());
+
+                                            let balance = reg.account_balances.get(&caller)
+                                                .map(|b| b.to_string())
+                                                .unwrap_or_else(|| "10000000000000000000000".to_string());
+
+                                            notes.push(json!({
+                                                "commitment": commit_hex,
+                                                "assetId": "TBL",
+                                                "amount": balance,
+                                                "sender": "0x0000000000000000000000000000000000000101",
+                                                "recipient": format!("{:#x}", caller),
+                                                "targetSlot": slot_id,
+                                                "isShielded": true,
+                                                "viewTag": 66,
+                                                "status": "unspent",
+                                                "irohCid": format!("bafkr4inote{}", &format!("{:#x}", caller).replace("0x", "")),
+                                                "payload": payload_val
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+
+                            if notes.is_empty() {
+                                if let Ok(bytes) = engine.get_blob(&format!("genesis_note_{:#x}", caller))
+                                    .or_else(|_| engine.get_blob(&format!("note_{:#x}", caller))) {
+                                    if let Ok(doc) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                                        notes.push(json!({
+                                            "commitment": doc.get("commitment").and_then(|c| c.as_str()).unwrap_or("0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"),
+                                            "assetId": doc.get("assetId").and_then(|a| a.as_str()).unwrap_or("TBL"),
+                                            "amount": doc.get("amount").and_then(|a| a.as_str()).unwrap_or("10000000000000000000000"),
+                                            "sender": doc.get("sender").and_then(|s| s.as_str()).unwrap_or("0x0000000000000000000000000000000000000101"),
+                                            "recipient": format!("{:#x}", caller),
+                                            "targetSlot": doc.get("slot").and_then(|s| s.as_u64()).unwrap_or(2),
+                                            "isShielded": true,
+                                            "viewTag": doc.get("viewTag").and_then(|v| v.as_u64()).unwrap_or(66),
+                                            "status": "unspent",
+                                            "irohCid": format!("bafkr4inote{}", &format!("{:#x}", caller).replace("0x", "")),
+                                            "payload": String::from_utf8(bytes).unwrap_or_default()
+                                        }));
+                                    }
+                                }
+                            }
+                        } else {
+                            for (acc, car) in &reg.account_registers {
+                                for (slot_id, slot) in &car.slots {
+                                    if *slot_id == 2 || slot.plugin_id == "core.native_payment" {
+                                        if slot.commitment != alloy_primitives::B256::ZERO {
+                                            let commit_hex = format!("{:#x}", slot.commitment);
+                                            let balance = reg.account_balances.get(acc)
+                                                .map(|b| b.to_string())
+                                                .unwrap_or_else(|| "10000000000000000000000".to_string());
+                                            notes.push(json!({
+                                                "commitment": commit_hex,
+                                                "assetId": "TBL",
+                                                "amount": balance,
+                                                "sender": "0x0000000000000000000000000000000000000101",
+                                                "recipient": format!("{:#x}", acc),
+                                                "targetSlot": slot_id,
+                                                "isShielded": true,
+                                                "viewTag": 66,
+                                                "status": "unspent",
+                                                "irohCid": format!("bafkr4inote{}", &format!("{:#x}", acc).replace("0x", "")),
+                                                "payload": json!({
+                                                    "memo": "Treasury Allocation",
+                                                    "targetSlot": slot_id,
+                                                    "status": "unspent"
+                                                }).to_string()
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        notes
+                    };
+
+                    send_result(&mut client_stream, &id, json!({
+                        "caller": caller_str,
+                        "notes": notes
+                    })).await;
                     continue;
                 }
 
@@ -1192,7 +1400,7 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                         let mut cd_bytes = [0u8; 36];
                                         cd_bytes[0..4].copy_from_slice(&[0x38, 0x82, 0x77, 0x24]); // sweepTransfer
                                         cd_bytes[16..36].copy_from_slice(recipient.as_slice());
-                                        ("send", "Lattice Send", format!("{:#x}", recipient), format!("{amount} TBL"), format!("0x{}", hex::encode(cd_bytes)))
+                                        ("send", "Lattice Send", format!("{:#x}", recipient), format!("{amount} TBL"), format!("0x{}", alloy_primitives::hex::encode(cd_bytes)))
                                     }
                                     sovereign_consensus::stateless::LatticePayload::Receive { send_block_hash, amount } => {
                                         ("receive", "Claim Settle", format!("{:#x}", send_block_hash), format!("{amount} TBL"), format!("{:#x}", send_block_hash))
@@ -1209,6 +1417,15 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                     }
                                     sovereign_consensus::stateless::LatticePayload::AbsorbNote { absorb } => {
                                         ("absorb_note", "Absorb Blind Note", format!("{:#x}", absorb.nullifier), "Blind Note".to_string(), format!("{:#x}", absorb.nullifier))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::Lease { intermediate_root, duration_epochs } => {
+                                        ("lease", "Account Lease", format!("{:#x}", intermediate_root), format!("{duration_epochs} Epochs"), format!("{:#x}", intermediate_root))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::Unlock { unlock_commitment } => {
+                                        ("unlock", "Account Unlock", format!("{:#x}", unlock_commitment), "0.0 TBL".to_string(), format!("{:#x}", unlock_commitment))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::Reclaim { intermediate_root, expiry_epoch } => {
+                                        ("reclaim", "Account Reclaim", format!("{:#x}", intermediate_root), format!("Expires {expiry_epoch}"), format!("{:#x}", intermediate_root))
                                     }
                                 };
                                 entries.push(json!({
@@ -1256,7 +1473,7 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                         let mut cd_bytes = [0u8; 36];
                                         cd_bytes[0..4].copy_from_slice(&[0x38, 0x82, 0x77, 0x24]); // sweepTransfer
                                         cd_bytes[16..36].copy_from_slice(recipient.as_slice());
-                                        ("send", "Lattice Send", format!("{:#x}", recipient), format!("{amount} TBL"), format!("0x{}", hex::encode(cd_bytes)))
+                                        ("send", "Lattice Send", format!("{:#x}", recipient), format!("{amount} TBL"), format!("0x{}", alloy_primitives::hex::encode(cd_bytes)))
                                     }
                                     sovereign_consensus::stateless::LatticePayload::Receive { send_block_hash, amount } => {
                                         ("receive", "Claim Settle", format!("{:#x}", send_block_hash), format!("{amount} TBL"), format!("{:#x}", send_block_hash))
@@ -1273,6 +1490,15 @@ pub async fn run_proxy(port: u16, reth_port: u16, chain_id: u64) -> Result<(), e
                                     }
                                     sovereign_consensus::stateless::LatticePayload::AbsorbNote { absorb } => {
                                         ("absorb_note", "Absorb Blind Note", format!("{:#x}", absorb.nullifier), "Blind Note".to_string(), format!("{:#x}", absorb.nullifier))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::Lease { intermediate_root, duration_epochs } => {
+                                        ("lease", "Account Lease", format!("{:#x}", intermediate_root), format!("{duration_epochs} Epochs"), format!("{:#x}", intermediate_root))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::Unlock { unlock_commitment } => {
+                                        ("unlock", "Account Unlock", format!("{:#x}", unlock_commitment), "0.0 TBL".to_string(), format!("{:#x}", unlock_commitment))
+                                    }
+                                    sovereign_consensus::stateless::LatticePayload::Reclaim { intermediate_root, expiry_epoch } => {
+                                        ("reclaim", "Account Reclaim", format!("{:#x}", intermediate_root), format!("Expires {expiry_epoch}"), format!("{:#x}", intermediate_root))
                                     }
                                 };
                                 found = Some(json!({

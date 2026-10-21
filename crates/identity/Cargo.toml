@@ -3,6 +3,7 @@ name = "sovereign-identity"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
 
 [dependencies]
 alloy-primitives = { workspace = true }

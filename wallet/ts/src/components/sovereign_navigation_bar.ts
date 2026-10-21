@@ -127,6 +127,8 @@ export class SovereignNavigationBar extends BaseElement {
             { id: 'activitypub', label: '🌌 Fediverse' },
             { id: 'explorer', label: '⛓️ Explorer' },
             { id: 'market', label: '🖼️ Market' },
+            { id: 'telemetry', label: '📡 Terminal' },
+            { id: 'governance', label: '🏛️ Governance' },
             { id: 'storage', label: '💾 Storage', devOnly: true },
             { id: 'debugger', label: '🐞 Debugger', devOnly: true },
         ];

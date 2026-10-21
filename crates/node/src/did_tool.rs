@@ -607,7 +607,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "system_precompile_inbox": "0x0000000000000000000000000000000000000002",
                         "is_network_proven": true
                     });
-                    println!("=== Interfold E3 Network-Proven Transfer Ticket ===");
+                    println!("=== Mirrored Foreign Chain Mesh Transfer Ticket ===");
                     println!("{}", serde_json::to_string_pretty(&ticket)?);
                     return Ok(());
                 }

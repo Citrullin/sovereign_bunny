@@ -18,6 +18,7 @@ sovereign-crypto = { path = "../crypto" }
 blake3 = { workspace = true }
 k256 = { workspace = true, features = ["ecdsa"] }
 hex = { workspace = true }
+time = "0.3"
 
 [dev-dependencies]
 serial_test = "3.1"

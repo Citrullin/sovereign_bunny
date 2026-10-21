@@ -307,6 +307,20 @@ impl PolymorphicAccountRegister {
         Ok(self.compute_state_tip())
     }
 
+    /// Explicitly transitions a mounted slot with strict monotonic sequence nonce verification.
+    pub fn transition_slot_with_nonce(
+        &mut self,
+        slot_id: u16,
+        new_commitment: B256,
+        current_epoch: u64,
+        proposed_nonce: u64,
+    ) -> Result<B256, &'static str> {
+        if proposed_nonce != self.nonce + 1 {
+            return Err("CAR_ERR: Nonce must strictly increment monotonically");
+        }
+        self.transition_slot(slot_id, new_commitment, current_epoch)
+    }
+
     /// Dynamically unmounts an unused slot.
     pub fn unmount_slot(&mut self, slot_id: u16) -> Result<(), &'static str> {
         self.slots.remove(&slot_id).ok_or("Slot not mounted")?;
@@ -440,7 +454,8 @@ impl PolymorphicAccountRegister {
         schema_proof: &[u8],
     ) -> Result<B256, &'static str> {
         let slot = self.slots.get(&slot_id).ok_or("Slot not mounted")?;
-        if slot.plugin_id.contains("sql") || slot.plugin_id == "ext.sqldigest" {
+        // Require strict schema matching against network-fixed SQL plugin schema
+        if slot.plugin_id == "ext.sqldigest" || slot.slot_id == 4 {
             let execution_digest = alloy_primitives::keccak256(
                 [query_digest.as_slice(), new_table_root.as_slice()].concat(),
             );
@@ -578,6 +593,41 @@ impl AddressInterestSignal {
         hasher.update(self.target_monitored_address.as_slice());
         hasher.update(self.app_context.as_bytes());
         *hasher.finalize().as_bytes()
+    }
+}
+
+/// Specific category of schema decoding or template interpretation mismatch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DiagnosticKind {
+    Truncated,
+    TrailingBytes,
+    NonCanonicalField(String),
+    UnknownVariant(u8),
+    SchemaMismatch,
+    LengthOverflow,
+    InvalidUtf8,
+}
+
+/// First-class diagnostic explaining structured template/specification interpretation discrepancies.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParseDiagnostic {
+    pub slot_id: u16,
+    pub schema_hash_expected: B256,
+    pub schema_hash_seen: Option<B256>,
+    pub encoding: String,
+    pub kind: DiagnosticKind,
+    pub byte_offset: usize,
+    pub field_path: String,
+    pub hint: String,
+}
+
+impl ParseDiagnostic {
+    #[must_use]
+    pub fn user_friendly_message(&self) -> String {
+        format!(
+            "This slot bytes do not match schema {:#x} at {} (offset 0x{:x}): {:?}. The template/specification interpreting this data may be wrong or out of date. Hint: {}",
+            self.schema_hash_expected, self.field_path, self.byte_offset, self.kind, self.hint
+        )
     }
 }
 
@@ -1070,4 +1120,49 @@ mod tests {
         let slot = car.slots.get(&slot_id_v2).unwrap();
         assert_ne!(slot.commitment, B256::ZERO);
     }
+
+    #[test]
+    fn test_parse_diagnostic_formatting() {
+        let diag = ParseDiagnostic {
+            slot_id: 4,
+            schema_hash_expected: B256::repeat_byte(0x44),
+            schema_hash_seen: Some(B256::repeat_byte(0x55)),
+            encoding: "cbor".to_string(),
+            kind: DiagnosticKind::NonCanonicalField("transaction_limit".to_string()),
+            byte_offset: 0x2a,
+            field_path: "accounting.rules[0].limit".to_string(),
+            hint: "Shortest-form integer encoding expected per RFC 8949 section 4.2".to_string(),
+        };
+
+        let msg = diag.user_friendly_message();
+        assert!(msg.contains("accounting.rules[0].limit"));
+        assert!(msg.contains("0x2a"));
+        assert!(msg.contains("template/specification"));
+        assert!(msg.contains("Hint:"));
+    }
+
+    #[test]
+    fn test_car_register_transition_slot_with_nonce() {
+        let addr = Address::repeat_byte(0x99);
+        let mut car = PolymorphicAccountRegister::new_with_default_config(addr, U256::from(1000));
+        let _initial_nonce = car.nonce;
+
+        // Mounting slot incremented nonce by 1 for each mounted default slot
+        let current_nonce = car.nonce;
+        let new_commitment = B256::repeat_byte(0x77);
+
+        // Valid monotonic nonce transition: current_nonce + 1
+        let res_ok = car.transition_slot_with_nonce(2, new_commitment, 1, current_nonce + 1);
+        assert!(res_ok.is_ok(), "Valid monotonic nonce transition should succeed");
+        assert_eq!(car.nonce, current_nonce + 1);
+
+        // Replay attempt with same nonce should fail
+        let res_replay = car.transition_slot_with_nonce(2, B256::repeat_byte(0x88), 1, current_nonce + 1);
+        assert_eq!(res_replay.unwrap_err(), "CAR_ERR: Nonce must strictly increment monotonically");
+
+        // Stale or gap nonce should fail
+        let res_gap = car.transition_slot_with_nonce(2, B256::repeat_byte(0x88), 1, car.nonce + 2);
+        assert_eq!(res_gap.unwrap_err(), "CAR_ERR: Nonce must strictly increment monotonically");
+    }
 }
+

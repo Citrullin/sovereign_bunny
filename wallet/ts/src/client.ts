@@ -211,6 +211,9 @@ export class SovereignClient {
         getPendingInbox: (address: string) => Promise<any[]>;
         receive: (recipient: string, sendBlockHash: string, proofHex?: string) => Promise<any>;
         reclaimSend: (sender: string, sendBlockHash: string, currentBlockNum?: number) => Promise<any>;
+        leaseAccount: (account: string, intermediateRoot: string, durationEpochs: number) => Promise<any>;
+        unlockAccount: (account: string, unlockCommitment: string) => Promise<any>;
+        reclaimLease: (account: string, intermediateRoot: string, expiryEpoch: number) => Promise<any>;
         getReclaimTimeout: () => Promise<{ reclaim_timeout_epochs: number; current_epoch: number; blocks_per_epoch: number }>;
         setReclaimTimeout: (epochs: number) => Promise<any>;
     };
@@ -235,6 +238,11 @@ export class SovereignClient {
         verifySecurityCompliance: (account: string) => Promise<{ compliant: boolean; warning?: string }>;
         upgradeToQuantumSecure: (pqPublicKey: string | Uint8Array, didDocument: string) => Promise<any>;
     };
+    public telemetry: {
+        getTier: (account: string) => Promise<{ tier: 'Subsidized' | 'Quantized' | 'SovereignDark'; feeMultiplierBps: number; permitsEmission: boolean }>;
+        setTier: (tier: 'Subsidized' | 'Quantized' | 'SovereignDark') => Promise<any>;
+        submitLineageAttestation: (attestation: { settledStateRoot: string; tipHash: string; epoch: number; volumeWeight: bigint; lineageNullifier: string; proofHex: string }) => Promise<any>;
+    };
 
     public storageManager: AccountStorageManager;
     public debugger: SovereignDebugger;
@@ -258,8 +266,15 @@ export class SovereignClient {
             this.mode = 'legacy_wrapped';
         }
 
-        this.rpcUrl = options.rpcUrl || 'http://localhost:8545';
-        this.storageUrl = options.storageUrl || 'http://localhost:8548';
+        const configuredRpc = options.rpcUrl ||
+            (typeof localStorage !== 'undefined' ? localStorage.getItem('sovereign_rpc_endpoint') : null) ||
+            (typeof document !== 'undefined' ? ((document.getElementById('overview-rpc-endpoint-input') as HTMLInputElement)?.value || (document.getElementById('rpc-endpoint-input') as HTMLInputElement)?.value) : null) ||
+            (typeof window !== 'undefined' ? '/rpc' : 'http://localhost:8545');
+
+        this.rpcUrl = configuredRpc;
+        this.storageUrl = options.storageUrl ||
+            (typeof localStorage !== 'undefined' ? localStorage.getItem('sovereign_storage_endpoint') : null) ||
+            'http://localhost:8548';
 
         this.storageManager = new AccountStorageManager();
         this.debugger = new SovereignDebugger(this.storageManager);
@@ -274,6 +289,7 @@ export class SovereignClient {
         this.notes = this._initNotes();
         this.sessions = this._initSessions();
         this.security = this._initSecurity();
+        this.telemetry = this._initTelemetry();
         this.nfc = SovereignNfcManager;
     }
 
@@ -585,6 +601,15 @@ export class SovereignClient {
             async reclaimSend(sender: string, sendBlockHash: string, currentBlockNum: number = 0) {
                 return await self._postRpc("sovereign_reclaimSend", [sender, sendBlockHash, currentBlockNum]);
             },
+            async leaseAccount(account: string, intermediateRoot: string, durationEpochs: number) {
+                return await self._postRpc("sovereign_leaseAccount", [account, intermediateRoot, durationEpochs]);
+            },
+            async unlockAccount(account: string, unlockCommitment: string) {
+                return await self._postRpc("sovereign_unlockAccount", [account, unlockCommitment]);
+            },
+            async reclaimLease(account: string, intermediateRoot: string, expiryEpoch: number) {
+                return await self._postRpc("sovereign_reclaimLease", [account, intermediateRoot, expiryEpoch]);
+            },
             async getReclaimTimeout(): Promise<{ reclaim_timeout_epochs: number; current_epoch: number; blocks_per_epoch: number }> {
                 return await self._postRpc("sovereign_getReclaimTimeout");
             },
@@ -732,6 +757,49 @@ export class SovereignClient {
         };
     }
 
+    private _initTelemetry() {
+        const self = this;
+        return {
+            async getTier(account: string): Promise<{ tier: 'Subsidized' | 'Quantized' | 'SovereignDark'; feeMultiplierBps: number; permitsEmission: boolean }> {
+                const res = await self._postRpc("sovereign_getTelemetryTier", [account]);
+                if (res && res.tier) {
+                    return res;
+                }
+                // Default: Quantized (100 bps baseline)
+                return {
+                    tier: 'Quantized',
+                    feeMultiplierBps: 100,
+                    permitsEmission: true
+                };
+            },
+            async setTier(tier: 'Subsidized' | 'Quantized' | 'SovereignDark'): Promise<any> {
+                await self.initSigner();
+                const caller = self.signer ? await self.signer.getAddress() : ethers.ZeroAddress;
+                return await self._postRpc("sovereign_setTelemetryTier", [caller, tier]);
+            },
+            async submitLineageAttestation(attestation: {
+                settledStateRoot: string;
+                tipHash: string;
+                epoch: number;
+                volumeWeight: bigint;
+                lineageNullifier: string;
+                proofHex: string;
+            }): Promise<any> {
+                await self.initSigner();
+                const caller = self.signer ? await self.signer.getAddress() : ethers.ZeroAddress;
+                return await self._postRpc("sovereign_submitStateLineage", [
+                    caller,
+                    attestation.settledStateRoot,
+                    attestation.tipHash,
+                    attestation.epoch,
+                    attestation.volumeWeight.toString(),
+                    attestation.lineageNullifier,
+                    attestation.proofHex
+                ]);
+            }
+        };
+    }
+
     private async _postRpc(method: string, params: any[] = []): Promise<any> {
         const payload = {
             jsonrpc: "2.0",
@@ -740,10 +808,38 @@ export class SovereignClient {
             id: Date.now()
         };
         const endpoints: string[] = [];
-        if (this.rpcUrl.includes(":8545")) {
-            endpoints.push(this.rpcUrl.replace(":8545", ":8546"));
+
+        // Check if there is an updated RPC URL in DOM or localStorage
+        let activeRpc = this.rpcUrl;
+        if (typeof document !== 'undefined') {
+            const overviewRpc = (document.getElementById('overview-rpc-endpoint-input') as HTMLInputElement)?.value;
+            const settingsRpc = (document.getElementById('rpc-endpoint-input') as HTMLInputElement)?.value;
+            if (overviewRpc) activeRpc = overviewRpc;
+            else if (settingsRpc) activeRpc = settingsRpc;
         }
-        endpoints.push(this.rpcUrl);
+        if (typeof localStorage !== 'undefined') {
+            const storedRpc = localStorage.getItem('sovereign_rpc_endpoint');
+            if (storedRpc) activeRpc = storedRpc;
+        }
+
+        // Prioritize relative /rpc proxy first if activeRpc is default or starts with /
+        if (typeof window !== 'undefined') {
+            if (activeRpc.startsWith('/')) {
+                endpoints.push(activeRpc);
+                endpoints.push(`${window.location.origin}${activeRpc}`);
+            } else if (activeRpc.includes('localhost') || activeRpc.includes('127.0.0.1')) {
+                // If on browser accessing a remote host, localhost will fail. Try /rpc first!
+                endpoints.push('/rpc');
+                endpoints.push(`${window.location.origin}/rpc`);
+                endpoints.push(activeRpc);
+            } else {
+                endpoints.push(activeRpc);
+                endpoints.push('/rpc');
+                endpoints.push(`${window.location.origin}/rpc`);
+            }
+        } else {
+            endpoints.push(activeRpc);
+        }
 
         let lastError = null;
         for (const ep of endpoints) {
@@ -758,7 +854,7 @@ export class SovereignClient {
                     if (json.error.code === -32601) continue;
                     throw new Error(json.error.message || `RPC Error: ${json.error.code}`);
                 }
-                return json.result;
+                return json.result !== undefined ? json.result : json;
             } catch (err) {
                 lastError = err;
             }

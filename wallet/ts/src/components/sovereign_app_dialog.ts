@@ -166,6 +166,8 @@ export class SovereignAppDialog extends BaseElement {
     }
 
     private _handleOk(): void {
+        this.isOpen = false;
+        this.requestUpdate();
         if (this._resolve) {
             const cb = this._resolve;
             this._resolve = null;
@@ -174,6 +176,8 @@ export class SovereignAppDialog extends BaseElement {
     }
 
     private _handleCancel(): void {
+        this.isOpen = false;
+        this.requestUpdate();
         if (this._resolve) {
             const cb = this._resolve;
             this._resolve = null;

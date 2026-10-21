@@ -8,6 +8,7 @@ members = [
     "crates/crypto",
     "crates/execution",
     "crates/sovereign-ssz",
+    "crates/car-vstate",
     "crates/iggy-ctrl",
     "crates/koral-verify",
     "crates/node",
@@ -22,6 +23,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 authors = ["Citrullin"]
+license = "GPL-3.0-only"
 
 [workspace.dependencies]
 tokio = { version = "1.37", features = ["full"] }
@@ -91,6 +93,7 @@ sovereign-consensus = { path = "crates/consensus" }
 sovereign-attestation = { path = "crates/attestation" }
 sovereign-identity = { path = "crates/identity" }
 sovereign-network = { path = "crates/network" }
+car-vstate = { path = "crates/car-vstate" }
 
 [profile.dev]
 debug = 0

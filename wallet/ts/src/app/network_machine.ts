@@ -47,6 +47,9 @@ export async function callBunnyRpc<T = any>(
     params: any[] = [],
     rpcUrlInput?: string
 ): Promise<BunnyRpcResponse<T>> {
+    if (typeof window !== 'undefined' && typeof (window as any).callBunnyRpc === 'function' && (window as any).callBunnyRpc !== callBunnyRpc) {
+        return (window as any).callBunnyRpc(method, params, rpcUrlInput);
+    }
     const rawRpc = rpcUrlInput || (typeof document !== 'undefined' ? (document.getElementById('rpc-endpoint-input') as HTMLInputElement)?.value : null) || '/rpc';
     let primaryUrl = rawRpc;
     if (primaryUrl.startsWith('/') && typeof window !== 'undefined') {

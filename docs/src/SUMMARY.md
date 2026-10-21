@@ -20,6 +20,7 @@
 - [SMT State Model](architecture/smt-state.md)
 - [Superposition State](architecture/superposition.md)
 - [Blind Note Transport & Privacy](architecture/blind-note-transport.md)
+- [Account Leases & Native Locks](architecture/account-leases.md)
 - [Daemon API & ABI](architecture/daemon-abi.md)
 
 ---
@@ -47,4 +48,5 @@
 - [Running a Node](guide/running-a-node.md)
 - [Wallet Integration](guide/wallet-integration.md)
 - [Writing a Lattice Client](guide/lattice-client.md)
+- [Terminal Telemetry Tiers](guide/terminal-telemetry-tiers.md)
 - [Security Model](guide/security-model.md)

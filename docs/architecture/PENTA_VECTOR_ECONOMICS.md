@@ -1,10 +1,14 @@
 # The Penta-Vector Emission Model, Slashing Matrix & VFS Storage Economics
 
-## 1. The Penta-Vector Emission Model (20% Hard Caps)
+> [!WARNING]
+> **Architectural Reconciliation Notice (Sovereign Whitebooklet v0.4 Alignment)**:
+> The initial conceptual framing of a synthetic 100% inflationary token emission pool and fee burning ("deflationary value accrual") in this draft is **formally deprecated** in favor of the production economic doctrine established in **"Sovereign Bunny: Collaborative Acceleration (co/acc)"** (§4, `docs/booklet/sovereign-booklet.tex`):
+> 1. **Zero Inflationary Minting ($\Delta M = \Delta Y$)**: Money is strictly an accounting invariant of verified physical output and productive debt clearance. Validators and operators are compensated via **fee-funded revenue splits** (Operator Pool, Commons Fund, Mutual Insurance Reserve), NOT unbacked inflationary token emissions.
+> 2. **Commercial Bank Money Tokens (CBMT) & Eurosystem Pontes**: Liquidity is endogenously created as commercial bank deposits (CBMT) matching industrial invoices committed in CAR Slot 4, clearing wholesale in Central Bank Money (CeBM) over Eurosystem Pontes (TARGET2 / TIPS).
+> 3. **Capital-Backed Bonds vs. Unbacked Reputation**: Slashing forfeits capital-backed bonds held in escrow in settlement units (EUR / CBMT), while subjective AI merit and social outreach affect non-financialized reputation only.
+> 4. **Storage Endowment vs. Decaying Burn**: Permanent storage is funded via an Arweave-style conservative endowment model rather than burned tokens with decaying credits.
 
-To prevent compute cartels, validator monopolies, or Sybil-farming AI agents from capturing token emissions, the epoch inflation rate is capped and partitioned across **five orthogonal contribution vectors** (maximum $20\%$ allocation per vector per epoch).
-
-If a category does not fully utilize its $20\%$ quota in a given epoch, the excess is **permanently burned** at the epoch cut to maintain deflationary pressure.
+## 1. Historical Context: The Penta-Vector Conceptual Model
 
 ```
                     ┌─────────────────────────────────────────────────┐

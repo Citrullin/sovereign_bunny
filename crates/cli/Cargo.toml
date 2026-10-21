@@ -3,6 +3,7 @@ name = "bunny-cli"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
 
 [lib]
 name = "bunny_cli"

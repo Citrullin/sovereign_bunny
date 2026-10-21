@@ -1,6 +1,5 @@
 import { LitElement, html, css, TemplateResult } from 'lit';
 import cytoscape, { Core as CyCore } from 'cytoscape';
-import { AuthorityPanelStateMachine } from './authority_machine.js';
 import { SqlSchemaRegistry } from './sql_schema_template_engine.js';
 
 export type GraphNodeType =
@@ -524,7 +523,6 @@ export class GraphExplorer extends BaseElement {
     private _activeAddress: string | null = null;
     private _highlightedPath: string[] = [];
     private _pluginRegistry: PluginRegistry = new PluginRegistry();
-    private _authorityActor: AuthorityPanelStateMachine | null = null;
     private _delegatedBound: boolean = false;
     private _cy: CyCore | null = null;
     private _cyLayout: 'cose' | 'concentric' | 'breadthfirst' = 'cose';
@@ -544,11 +542,6 @@ export class GraphExplorer extends BaseElement {
         this._pluginRegistry.register(BlindNotePlugin);
         this._pluginRegistry.register(DidIdentityPlugin);
         this._pluginRegistry.register(PolymorphicSlotsPlugin);
-        this._authorityActor = new AuthorityPanelStateMachine();
-    }
-
-    get authorityActor(): AuthorityPanelStateMachine | null {
-        return this._authorityActor;
     }
 
     getGraphData(): GraphData {
@@ -576,7 +569,7 @@ export class GraphExplorer extends BaseElement {
     connectedCallback(): void {
         super.connectedCallback?.();
         this.loadGraphFromGenesisOrLattice().catch(() => {});
-        if (typeof window !== 'undefined') {
+        if (typeof window !== 'undefined' && (!this.id || this.id === 'sovereign-graph-explorer')) {
             (window as any).sovereignGraphExplorer = this;
             (window as any).selectGraphEntityByCommitment = (commitment: string, addressHint?: string) => {
                 return this.selectNodeByCommitment(commitment, addressHint);
@@ -937,9 +930,11 @@ export class GraphExplorer extends BaseElement {
             this.render();
         }
 
-        const daoEl = typeof document !== 'undefined' ? (document.getElementById('zodiac-dao-explorer-panel') as any) : null;
-        if (daoEl && typeof daoEl.loadActiveDaos === 'function') {
-            daoEl.loadActiveDaos(data, this._activeAddress);
+        if (!this.id || this.id === 'sovereign-graph-explorer') {
+            const daoEl = typeof document !== 'undefined' ? (document.getElementById('zodiac-dao-explorer-panel') as any) : null;
+            if (daoEl && typeof daoEl.loadActiveDaos === 'function') {
+                daoEl.loadActiveDaos(data, this._activeAddress);
+            }
         }
     }
 
@@ -950,21 +945,6 @@ export class GraphExplorer extends BaseElement {
 
     selectNode(id: string): void {
         this._selectedNodeId = id;
-        const selectedNode = this._graphData.nodes.find(n => n.id.toLowerCase() === id.toLowerCase());
-        if (selectedNode && (selectedNode.type === 'xroad_authority' || selectedNode.type === 'collaborative_authority')) {
-            const meta = selectedNode.metadata || {};
-            const courtOrder = meta['court_order'] as any;
-            const certChain = (meta['cert_chain'] as any[]) || [];
-            this._authorityActor?.send({
-                type: 'LOAD_AUTHORITY',
-                authorityId: selectedNode.id,
-                authorityAddress: selectedNode.address,
-                jurisdiction: (meta['jurisdiction'] as string) || 'Global',
-                courtOrder: courtOrder || null,
-                certChain,
-            });
-        }
-
         if (this._cy && !this._cy.destroyed()) {
             try {
                 this._cy.nodes().unselect();
@@ -1235,12 +1215,6 @@ export class GraphExplorer extends BaseElement {
             const { current, path } = queue.shift()!;
             if (current === targetId) {
                 this._highlightedPath = path;
-                this._authorityActor?.send({
-                    type: 'TRAVERSE_AUDIT_PATH',
-                    sourceId,
-                    targetId,
-                    path,
-                });
                 if (typeof (this as any).requestUpdate === 'function') {
                     (this as any).requestUpdate();
                 } else {

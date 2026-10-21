@@ -1,4 +1,5 @@
 /target
+scratch/
 /db
 /contracts/node_modules
 tests/e2e/node_modules
@@ -31,6 +32,8 @@ dist/
 
 # Documentation build output
 /docs/book/
+/docs/booklet/build/
+/docs/booklet/dist/
 
 # Generic environment files & local overrides
 .env

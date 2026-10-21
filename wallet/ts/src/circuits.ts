@@ -27,6 +27,7 @@ export interface PidNullifierCircuitOutputs {
 export interface EidasPredicateCircuitInputs {
     raw_pid_jwt: Uint8Array;          // [u8; 4096]
     issuer_sig: Uint8Array;           // [u8; 64]
+    qtsp_pubkey: Uint8Array;          // [u8; 64]
     qtsp_cert_fingerprint: Uint8Array;// [u8; 32]
     merkle_siblings: NoirField[];     // [Field; 32]
     leaf_index: bigint | number;      // u64
@@ -34,7 +35,9 @@ export interface EidasPredicateCircuitInputs {
     challenge_nonce: NoirField;       // pub Field
     account_pubkey: Uint8Array;       // pub [u8; 33]
     predicate_id: number;             // pub u8
+    predicate_outcome?: boolean;      // pub bool
 }
+
 
 /**
  * Circuit: circuits/pq_ml_dsa_in_zk.nr
@@ -182,4 +185,83 @@ export function formatPinNoteRedeemWitness(inputs: PinNoteRedeemCircuitInputs): 
         salt: typeof inputs.salt === 'bigint' ? `0x${inputs.salt.toString(16)}` : inputs.salt,
     } as any;
 }
+
+/**
+ * Circuit: circuits/private_unit_vote.nr
+ * Proves voter membership in an epoch SMT, derives a deterministic nullifier,
+ * and constrains vote_choice to binary unit value {0, 1}.
+ */
+export interface PrivateUnitVoteCircuitInputs {
+    // Private Inputs
+    voter_secret_key: NoirField;
+    vote_blinding: NoirField;
+    smt_leaf_index: bigint | number;
+    smt_siblings: NoirField[]; // [Field; 32]
+    vote_choice: NoirField;    // 0 or 1
+
+    // Public Inputs
+    proposal_id: NoirField;
+    proposal_scope: NoirField;
+    voter_registration_smt_root: NoirField;
+    derived_nullifier: NoirField;
+    vote_commitment: NoirField;
+    public_vote_weight: NoirField; // Must be 1
+}
+
+export function formatPrivateUnitVoteWitness(inputs: PrivateUnitVoteCircuitInputs): Record<string, string> {
+    const toHexStr = (val: NoirField) => (typeof val === 'bigint' ? `0x${val.toString(16)}` : val);
+    if (inputs.smt_siblings.length !== 32) {
+        throw new Error(`smt_siblings must have length 32, got ${inputs.smt_siblings.length}`);
+    }
+    return {
+        voter_secret_key: toHexStr(inputs.voter_secret_key),
+        vote_blinding: toHexStr(inputs.vote_blinding),
+        smt_leaf_index: inputs.smt_leaf_index.toString(),
+        smt_siblings: inputs.smt_siblings.map(toHexStr) as any,
+        vote_choice: toHexStr(inputs.vote_choice),
+        proposal_id: toHexStr(inputs.proposal_id),
+        proposal_scope: toHexStr(inputs.proposal_scope),
+        voter_registration_smt_root: toHexStr(inputs.voter_registration_smt_root),
+        derived_nullifier: toHexStr(inputs.derived_nullifier),
+        vote_commitment: toHexStr(inputs.vote_commitment),
+        public_vote_weight: toHexStr(inputs.public_vote_weight),
+    } as any;
+}
+
+/**
+ * TypeScript types and witness formatter for State Lineage Telemetry Circuit (circuits/state_lineage_telemetry.nr).
+ */
+export interface StateLineageTelemetryCircuitInputs {
+    voter_or_trader_sk: NoirField;
+    account_id: NoirField;
+    epoch: bigint | number;
+    tip_hash: NoirField;
+    leaf_value: NoirField;
+    merkle_path_index: bigint | number;
+    merkle_siblings: NoirField[]; // [Field; 32]
+
+    settled_state_root: NoirField;
+    lineage_nullifier: NoirField;
+    telemetry_tier: number; // 0 = Subsidized, 1 = Quantized, 2 = SovereignDark
+}
+
+export function formatStateLineageTelemetryWitness(inputs: StateLineageTelemetryCircuitInputs): Record<string, string> {
+    const toHexStr = (val: NoirField) => (typeof val === 'bigint' ? `0x${val.toString(16)}` : val);
+    if (inputs.merkle_siblings.length !== 32) {
+        throw new Error(`merkle_siblings must have length 32, got ${inputs.merkle_siblings.length}`);
+    }
+    return {
+        voter_or_trader_sk: toHexStr(inputs.voter_or_trader_sk),
+        account_id: toHexStr(inputs.account_id),
+        epoch: inputs.epoch.toString(),
+        tip_hash: toHexStr(inputs.tip_hash),
+        leaf_value: toHexStr(inputs.leaf_value),
+        merkle_path_index: inputs.merkle_path_index.toString(),
+        merkle_siblings: inputs.merkle_siblings.map(toHexStr) as any,
+        settled_state_root: toHexStr(inputs.settled_state_root),
+        lineage_nullifier: toHexStr(inputs.lineage_nullifier),
+        telemetry_tier: inputs.telemetry_tier.toString(),
+    } as any;
+}
+
 

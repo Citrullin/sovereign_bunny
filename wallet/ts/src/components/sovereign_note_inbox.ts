@@ -1,5 +1,6 @@
 import { LitElement, html, css, TemplateResult } from 'lit';
 import { DecryptedNote, NoteInboxActor, createNoteInboxMachineActor } from '../app/note_inbox_machine.js';
+import { callBunnyRpc } from '../app/network_machine.js';
 
 const BaseElement = typeof LitElement !== 'undefined' ? LitElement : class {} as unknown as typeof LitElement;
 
@@ -193,6 +194,9 @@ export class SovereignNoteInbox extends BaseElement {
             actor.start();
             this.actor = actor;
         }
+        if (this.address) {
+            this.scanNotes();
+        }
     }
 
     disconnectedCallback(): void {
@@ -208,13 +212,49 @@ export class SovereignNoteInbox extends BaseElement {
         this.requestUpdate();
     }
 
+    async scanNotes(): Promise<void> {
+        const addr = this.address;
+        if (!addr) return;
+        this.inboxState = 'scanning';
+        this.actor?.send({ type: 'SCAN' });
+        this.requestUpdate();
+
+        try {
+            const res = await callBunnyRpc('sovereign_getBlindNotes', [addr]).catch(() => null);
+            let loadedNotes: DecryptedNote[] = [];
+            if (res && res.result && Array.isArray(res.result.notes)) {
+                loadedNotes = res.result.notes.map((n: any) => ({
+                    commitment: n.commitment,
+                    assetId: n.assetId || 'TBL',
+                    amount: BigInt(n.amount || '0'),
+                    sender: n.sender,
+                    recipient: n.recipient,
+                    targetSlot: n.targetSlot || 2,
+                    payload: typeof n.payload === 'object' ? JSON.stringify(n.payload) : n.payload,
+                    isShielded: !!n.isShielded,
+                    viewTag: n.viewTag || 0,
+                    status: n.status || 'unspent',
+                }));
+            }
+            this.notes = loadedNotes;
+            this.actor?.send({ type: 'SCAN_COMPLETE', notes: loadedNotes });
+            this.inboxState = 'displaying';
+        } catch (e) {
+            console.warn('Note scanning error:', e);
+            this.actor?.send({ type: 'SCAN_FAIL', error: String(e) });
+            this.inboxState = 'idle';
+        }
+        this.requestUpdate();
+    }
+
     applyViewingKey(): void {
         if (!this.viewingKey.trim()) return;
         this.actor?.send({ type: 'SET_VIEWING_KEY', viewingKey: this.viewingKey.trim() });
+        this.scanNotes();
     }
 
     triggerScan(): void {
-        this.actor?.send({ type: 'SCAN' });
+        this.scanNotes();
         this.dispatchEvent(new CustomEvent('scan-notes', { detail: { address: this.address } }));
     }
 

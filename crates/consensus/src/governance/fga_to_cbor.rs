@@ -198,4 +198,30 @@ type account
         assert_eq!(decoded.commitment_hash(), commitment);
         assert_eq!(decoded.types.len(), model.types.len());
     }
+
+    #[test]
+    fn test_parse_european_dao_fga_hierarchy() {
+        let fga_content = include_str!("models/european_dao.fga");
+        let model = FgaModel::parse_dsl(fga_content).expect("parse european_dao.fga");
+        assert_eq!(model.schema_version, "1.1");
+        assert!(model.types.contains_key("department"));
+        assert!(model.types.contains_key("organization"));
+
+        let dept = &model.types["department"];
+        assert!(dept.relations.contains_key("proposal_creator"));
+        assert!(dept.relations.contains_key("vote_delegator"));
+
+        let org = &model.types["organization"];
+        assert!(org.relations.contains_key("can_submit_proposal"));
+        assert!(org.relations.contains_key("can_vote"));
+
+        let commitment = model.commitment_hash();
+        assert_ne!(commitment, B256::ZERO);
+
+        let cbor = model.to_cbor_payload();
+        assert_eq!(cbor[0], 0x71);
+        let decoded = FgaModel::from_cbor_payload(&cbor).expect("decode cbor");
+        assert_eq!(decoded.commitment_hash(), commitment);
+    }
 }
+

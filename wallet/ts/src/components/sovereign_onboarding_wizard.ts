@@ -258,110 +258,85 @@ export class SovereignOnboardingWizard extends BaseElement {
             ? (this.existingKeystoreFound ? (this.isSubmitting ? 'Unlocking...' : 'Unlock Keystore') : (this.isSubmitting ? 'Creating...' : 'Finish Setup'))
             : 'Next';
 
-        const step1Html = `
-            <div id="step-1" class="wizard-step ${this.step === 1 ? 'active' : ''}">
-                <h3 class="step-heading">Step 1: Connect Wallet</h3>
-                <p class="step-desc">Connect your standard EVM wallet (Rabby/MetaMask) to serve as your primary key identity.</p>
-                <div class="btn-group">
-                    <button class="nes-btn is-success" id="connect-evm-wallet-btn" type="button">🔌 Connect & Sign</button>
-                    <div id="siwe-status" class="status-box" style="color: #ff0;">${this.statusMessage || 'No wallet linked'}</div>
-                </div>
-            </div>
-        `;
-
-        const step2Html = `
-            <div id="step-2" class="wizard-step ${this.step === 2 ? 'active' : ''}">
-                <h3 class="step-heading">Step 2: Storage Method</h3>
-                <p class="step-desc">Select local storage folder for your keystore and DID profile, or restore an existing backup.</p>
-                <div class="btn-group">
-                    <button class="nes-btn is-primary" id="select-dir-btn" type="button">📁 Choose Storage Folder</button>
-                    <button class="nes-btn is-warning" id="wizard-import-btn" type="button">📥 Import Keystore Backup</button>
-                    <button class="nes-btn is-error" id="use-virtual-btn" type="button">🌐 Sandbox Mode (File API)</button>
-                </div>
-                <div id="dir-status" class="status-box" style="margin-top: 10px; color: #66fcf1;">
-                    ${this.directoryName ? `📁 Root Storage Active: ${this.directoryName}` : (this.statusMessage || '')}
-                </div>
-            </div>
-        `;
-
-        const step3Html = `
-            <div id="step-3" class="wizard-step ${this.step === 3 ? 'active' : ''}">
-                <h3 class="step-heading">Step 3: Setup Password</h3>
-                <p class="step-desc">${this.existingKeystoreFound
-                    ? 'Enter your password to unlock the detected post-quantum keystore.'
-                    : 'Set a password to encrypt your local post-quantum & auxiliary DID keys inside the keystore backup file.'}</p>
-                <div class="nes-field" style="margin-top: 15px;">
-                    <label for="wizard-password-input">Keystore Password:</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input
-                            type="${this.isPasswordVisible ? 'text' : 'password'}"
-                            id="wizard-password-input"
-                            class="nes-input is-dark"
-                            placeholder="${this.existingKeystoreFound ? 'Enter Password to Unlock' : 'Password'}"
-                            value="${this.password || ''}"
-                        >
-                        <button class="nes-btn" id="wizard-reveal-password-btn" type="button">${this.isPasswordVisible ? '🔒' : '👁️'}</button>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        const htmlStr = `
+        this.innerHTML = `
             <div id="onboarding-wizard" class="wizard-overlay" style="display: flex;">
-                <div class="nes-container is-rounded is-dark wizard-card" style="width: 480px; margin: auto; padding: 20px;">
+                <div class="nes-container is-rounded is-dark wizard-card">
+                    <h2 class="wizard-title">🌱 Sovereign Setup</h2>
+                    ${this.step === 1 ? `<div id="step-1" class="wizard-step active"><h3 class="step-heading">Step 1: Connect Wallet</h3><p class="step-desc">Connect your standard EVM wallet (Rabby/MetaMask) to serve as your primary key identity.</p></div>` : ''}
+                    ${this.step === 2 ? `<div id="step-2" class="wizard-step active"><h3 class="step-heading">Step 2: Storage Method</h3><p class="step-desc">Select local storage folder for your keystore and DID profile, or restore an existing backup.</p></div>` : ''}
+                    ${this.step === 3 ? `<div id="step-3" class="wizard-step active"><h3 class="step-heading">Step 3: Setup Password</h3></div>` : ''}
+                </div>
+            </div>
+        `;
+
+        return html`
+            <div id="onboarding-wizard" class="wizard-overlay" style="display: flex;">
+                <div class="nes-container is-rounded is-dark wizard-card" style="width: 520px; max-width: 92vw; margin: auto; padding: 20px; box-sizing: border-box; overflow: hidden;">
                     <h2 class="wizard-title">🌱 Sovereign Setup</h2>
 
-                    ${this.step === 1 ? step1Html : ''}
-                    ${this.step === 2 ? step2Html : ''}
-                    ${this.step === 3 ? step3Html : ''}
+                    ${this.step === 1 ? html`
+                        <div id="step-1" class="wizard-step active" style="width: 100%; box-sizing: border-box;">
+                            <h3 class="step-heading">Step 1: Connect Wallet</h3>
+                            <p class="step-desc">Connect your standard EVM wallet (Rabby/MetaMask) to serve as your primary key identity.</p>
+                            <div class="btn-group" style="width: 100%; box-sizing: border-box;">
+                                <button class="nes-btn is-success" id="connect-evm-wallet-btn" type="button" @click=${this._handleConnect}>🔌 Connect & Sign</button>
+                                <div id="siwe-status" class="status-box" style="color: #ff0; word-break: break-all; overflow-wrap: anywhere; width: 100%; box-sizing: border-box; font-size: 0.65rem; line-height: 1.4;">${this.statusMessage || 'No wallet linked'}</div>
+                            </div>
+                        </div>
+                    ` : ''}
 
-                    ${this.error ? `<div class="error-message">⚠️ ${this.error}</div>` : ''}
+                    ${this.step === 2 ? html`
+                        <div id="step-2" class="wizard-step active">
+                            <h3 class="step-heading">Step 2: Storage Method</h3>
+                            <p class="step-desc">Select local storage folder for your keystore and DID profile, or restore an existing backup.</p>
+                            <div class="btn-group">
+                                <button class="nes-btn is-primary" id="select-dir-btn" type="button" @click=${this._handleSelectDir}>📁 Choose Storage Folder</button>
+                                <button class="nes-btn is-warning" id="wizard-import-btn" type="button" @click=${this._handleImportKeystore}>📥 Import Keystore Backup</button>
+                                <button class="nes-btn is-error" id="use-virtual-btn" type="button" @click=${this._handleSandbox}>🌐 Sandbox Mode (File API)</button>
+                            </div>
+                            <div id="dir-status" class="status-box" style="margin-top: 10px; color: #66fcf1;">
+                                ${this.directoryName ? `📁 Root Storage Active: ${this.directoryName}` : (this.statusMessage || '')}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${this.step === 3 ? html`
+                        <div id="step-3" class="wizard-step active">
+                            <h3 class="step-heading">Step 3: Setup Password</h3>
+                            <p class="step-desc">${this.existingKeystoreFound
+                                ? 'Enter your password to unlock the detected post-quantum keystore.'
+                                : 'Set a password to encrypt your local post-quantum & auxiliary DID keys inside the keystore backup file.'}</p>
+                            <div class="nes-field" style="margin-top: 15px;">
+                                <label for="wizard-password-input">Keystore Password:</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input
+                                        type="${this.isPasswordVisible ? 'text' : 'password'}"
+                                        id="wizard-password-input"
+                                        class="nes-input is-dark"
+                                        placeholder="${this.existingKeystoreFound ? 'Enter Password to Unlock' : 'Password'}"
+                                        .value="${this.password || ''}"
+                                        @input=${(e: Event) => this._handlePasswordInput(e)}
+                                        @keydown=${(e: KeyboardEvent) => {
+                                            if (e.key === 'Enter' && canProceed) {
+                                                this._handleNext();
+                                            }
+                                        }}
+                                    >
+                                    <button class="nes-btn" id="wizard-reveal-password-btn" type="button" @click=${this._togglePasswordVisibility}>${this.isPasswordVisible ? '🔒' : '👁️'}</button>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${this.error ? html`<div class="error-message">⚠️ ${this.error}</div>` : ''}
 
                     <div class="wizard-nav">
-                        <button class="nes-btn is-error" id="prev-step-btn" type="button" ${this.step === 1 || this.isSubmitting ? 'disabled' : ''}>Back</button>
-                        <button class="nes-btn is-primary" id="next-step-btn" type="button" ${!canProceed ? 'disabled' : ''}>${nextLabel}</button>
+                        <button class="nes-btn is-error" id="prev-step-btn" type="button" ?disabled=${this.step === 1 || this.isSubmitting} @click=${this._handlePrev}>Back</button>
+                        <button class="nes-btn is-primary" id="next-step-btn" type="button" ?disabled=${!canProceed} @click=${this._handleNext}>${nextLabel}</button>
                     </div>
                 </div>
             </div>
         `;
-
-        this.innerHTML = htmlStr;
-
-        // Attach listeners directly to component elements without global document searches
-        if (typeof this.querySelector === 'function') {
-            const connectBtn = this.querySelector('#connect-evm-wallet-btn') as HTMLElement | null;
-            if (connectBtn) connectBtn.onclick = () => this._handleConnect();
-
-            const selectDirBtn = this.querySelector('#select-dir-btn') as HTMLElement | null;
-            if (selectDirBtn) selectDirBtn.onclick = () => this._handleSelectDir();
-
-            const importBtn = this.querySelector('#wizard-import-btn') as HTMLElement | null;
-            if (importBtn) importBtn.onclick = () => this._handleImportKeystore();
-
-            const sandboxBtn = this.querySelector('#use-virtual-btn') as HTMLElement | null;
-            if (sandboxBtn) sandboxBtn.onclick = () => this._handleSandbox();
-
-            const prevBtn = this.querySelector('#prev-step-btn') as HTMLElement | null;
-            if (prevBtn) prevBtn.onclick = () => this._handlePrev();
-
-            const nextBtn = this.querySelector('#next-step-btn') as HTMLElement | null;
-            if (nextBtn) nextBtn.onclick = () => this._handleNext();
-
-            const pwdInput = this.querySelector('#wizard-password-input') as HTMLInputElement | null;
-            if (pwdInput) {
-                pwdInput.oninput = (e) => this._handlePasswordInput(e);
-                pwdInput.onkeydown = (e) => {
-                    if (e.key === 'Enter' && canProceed) {
-                        this._handleNext();
-                    }
-                };
-            }
-
-            const revealBtn = this.querySelector('#wizard-reveal-password-btn') as HTMLElement | null;
-            if (revealBtn) revealBtn.onclick = () => this._togglePasswordVisibility();
-        }
-
-        return typeof html !== 'undefined' ? html`<div .innerHTML="${htmlStr}"></div>` : undefined;
     }
 }
 

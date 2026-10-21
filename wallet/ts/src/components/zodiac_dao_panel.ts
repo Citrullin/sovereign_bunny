@@ -7,6 +7,7 @@ import { keccak256, toHex, toBytes, pad, formatEther, parseEther } from 'viem';
 import { ZodiacDaoStateMachine, ZodiacDaoState } from '../zodiac_machine.js';
 import { callBunnyRpc } from '../app/network_machine.js';
 import { deriveNullifier, deriveViewTag, BlindNote } from '../circuits.js';
+import { sendEvmTransaction } from '../wallet_connector.js';
 
 export interface ZodiacRole {
     relation: string;
@@ -277,112 +278,126 @@ export function computeDataRefSize(content?: string): string {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+import genesisGraphData from '../genesis_graph.js';
+
 // -------------------------------------------------------------
-// Real Sovereign DAOs directly from genesis_graph.json
+// Real Sovereign DAOs dynamically parsed from on-chain genesis graph
 // -------------------------------------------------------------
-export const REAL_SOVEREIGN_DAOS: ZodiacDaoData[] = [
-    // 1. Tinyblock Global DAO (Genesis Node 0x...101)
-    {
-        daoName: "Tinyblock Global DAO (dao-global-tinyblock)",
-        daoId: "0x0000000000000000000000000000000000000101",
-        avatar: "0x0000000000000000000000000000000000000101",
-        owner: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
-        treasuryBalanceWei: 10000000000000000000000000n, // 10,000,000 TBL (0x52b7d2dcc80cd2e4000000)
-        roles: [
-            { relation: "Global Founder / Owner (0x0001)", subject: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266", level: "Root" },
-            { relation: "Core Protocol Manager (0x0002)", subject: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8", level: "Admin" },
-            { relation: "Sub-DAO Europe (0x0003)", subject: "0x0000000000000000000000000000000000000102", level: "Sub-DAO" },
-            { relation: "Sub-DAO North America (0x0003)", subject: "0x0000000000000000000000000000000000000103", level: "Sub-DAO" },
-            { relation: "Sub-DAO South America (0x0003)", subject: "0x0000000000000000000000000000000000000104", level: "Sub-DAO" },
-            { relation: "Sub-DAO Africa (0x0003)", subject: "0x0000000000000000000000000000000000000105", level: "Sub-DAO" },
-            { relation: "Sub-DAO Central Asia (0x0003)", subject: "0x0000000000000000000000000000000000000106", level: "Sub-DAO" },
-            { relation: "Sub-DAO Asia (0x0003)", subject: "0x0000000000000000000000000000000000000107", level: "Sub-DAO" },
-            { relation: "Sub-DAO Oceania (0x0003)", subject: "0x0000000000000000000000000000000000000108", level: "Sub-DAO" },
-            { relation: "Execution Coordinator (0x0004)", subject: "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc", level: "Execution" }
-        ],
-        dataRefs: [
-            {
-                datasetId: "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d",
-                blake3Root: "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d",
-                sizeFormatted: "654 B",
-                namespace: "dao_global/tinyblock_treasury_solvency",
+export function parseGenesisDaos(graphData: any): ZodiacDaoData[] {
+    if (!graphData || !Array.isArray(graphData.nodes)) return [];
+    const daos: ZodiacDaoData[] = [];
+    const daoNodes = graphData.nodes
+        .filter((n: any) => n.type === 'global_dao' || n.type === 'regional_dao')
+        .sort((a: any, b: any) => {
+            const addrA = (a.address || a.id || '').toLowerCase();
+            const addrB = (b.address || b.id || '').toLowerCase();
+            if (a.type === 'global_dao' && b.type !== 'global_dao') return -1;
+            if (b.type === 'global_dao' && a.type !== 'global_dao') return 1;
+            return addrA.localeCompare(addrB);
+        });
+    for (const daoNode of daoNodes) {
+        const daoId = (daoNode.id || daoNode.address || '').toLowerCase();
+        const daoAddress = daoNode.address || daoNode.id;
+        
+        const connectedEdges = (graphData.edges || []).filter((e: any) => 
+            (e.source && e.source.toLowerCase() === daoId) || 
+            (e.target && e.target.toLowerCase() === daoId)
+        );
+
+        const roles: ZodiacRole[] = [];
+        for (const edge of connectedEdges) {
+            const isSourceDao = edge.source && edge.source.toLowerCase() === daoId;
+            const peerId = isSourceDao ? edge.target : edge.source;
+            const rel = edge.relation || edge.label || 'member';
+            let level = 'Member';
+            if (rel.includes('admin') || rel.includes('owner')) level = 'Root';
+            else if (rel.includes('audit') || rel.includes('supervis')) level = 'Audit';
+            else if (rel.includes('service')) level = 'Service';
+            else if (rel.includes('maintainer') || rel.includes('exec')) level = 'Execution';
+            else if (rel.includes('sub_dao')) level = 'Sub-DAO';
+
+            roles.push({
+                relation: `${edge.label || rel} (${edge.relation || 'rel'})`,
+                subject: peerId,
+                level
+            });
+        }
+
+        // Add canonical founder/owner role if present in genesis
+        if (daoId === '0x0000000000000000000000000000000000000101') {
+            if (!roles.some(r => r.subject.toLowerCase() === '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266')) {
+                roles.unshift({
+                    relation: 'Global Founder / Owner (0x0001)',
+                    subject: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
+                    level: 'Root'
+                });
+            }
+        }
+
+        // Canonical dataRefs derived from genesis graph metadata
+        const dataRefs: ZodiacDataRef[] = [];
+        if (daoId === '0x0000000000000000000000000000000000000101') {
+            dataRefs.push({
+                datasetId: '0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d',
+                blake3Root: '0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d',
+                sizeFormatted: '654 B',
+                namespace: 'dao_global/tinyblock_treasury_solvency',
                 leaseEpochs: 1000,
-                filename: "tinyblock_treasury_solvency.json",
-                irohTicket: "iroh://bafkr4ih86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d",
-                previewContent: JSON.stringify({
-                    dao: "Tinyblock Global DAO",
-                    did: "did:sovereign:1337:dao-global-tinyblock",
-                    address: "0x0000000000000000000000000000000000000101",
-                    treasury_balance: "10000000.0 TBL (0x52b7d2dcc80cd2e4000000)",
-                    voting_weight_slot8: "0xb123a68962c0a1fda1002deb03047535e9d2ff30833d09f8d5f19fadbac36077",
-                    zanzibar_rebac_smt_slot1: "0x0000000000000000000000000000000000000101000000000000000000000000",
-                    storage_da_slot0x53: "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d",
-                    federated_sub_daos: [
-                        "0x0000000000000000000000000000000000000102 (Europe)",
-                        "0x0000000000000000000000000000000000000103 (North America)",
-                        "0x0000000000000000000000000000000000000104 (South America)",
-                        "0x0000000000000000000000000000000000000105 (Africa)",
-                        "0x0000000000000000000000000000000000000106 (Central Asia)",
-                        "0x0000000000000000000000000000000000000107 (Asia)",
-                        "0x0000000000000000000000000000000000000108 (Oceania)"
-                    ]
-                }, null, 2)
-            }
-        ],
-        slots: [
-            { slotId: 0, pluginId: "core.did_identity", commitment: "0x0000000000000000000000000000000000000000000000000000000000000000", description: "W3C DID Document Root" },
-            { slotId: 1, pluginId: "core.zanzibar", commitment: "0x0000000000000000000000000000000000000101000000000000000000000000", description: "Zanzibar ReBAC SMT (Precompile 0x61)" },
-            { slotId: 2, pluginId: "core.native_payment", commitment: "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d", description: "Native Payment Core / Blind Note Vault" },
-            { slotId: 8, pluginId: "dao.voting_weight", commitment: "0xb123a68962c0a1fda1002deb03047535e9d2ff30833d09f8d5f19fadbac36077", description: "DAO Voting Weight SMT Root" },
-            { slotId: 0x53, pluginId: "iroh.storage", commitment: "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d", description: "Iroh Content-Addressed Storage DA (Precompile 0x53)" }
-        ]
-    },
-    // 2. Europe Regional DAO (Genesis Node 0x...102)
-    {
-        daoName: "Europe Regional DAO (dao-europe)",
-        daoId: "0x0000000000000000000000000000000000000102",
-        avatar: "0x0000000000000000000000000000000000000102",
-        owner: "0xa11ce00000000000000000000000000000000001",
-        treasuryBalanceWei: 2500000000000000000000000n, // 2,500,000 TBL
-        roles: [
-            { relation: "Regional Admin (0x0001)", subject: "0xa11ce00000000000000000000000000000000001", level: "Root" },
-            { relation: "Parent Global Tinyblock DAO (0x0003)", subject: "0x0000000000000000000000000000000000000101", level: "Parent" },
-            { relation: "BaFin Regulatory Supervisor (0x0002)", subject: "0x0000000000000000000000000000000000000201", level: "Audit" }
-        ],
-        dataRefs: [
-            {
-                datasetId: "0x0000000000000000000000000000000000000102000000000000000000000000",
-                blake3Root: "0xbaf1020000000000000000000000000000000000000000000000000000000102",
-                sizeFormatted: "290 B",
-                namespace: "dao_europe/mica_statutory_solvency_2026",
-                leaseEpochs: 720,
-                filename: "mica_statutory_solvency_2026.json",
-                irohTicket: "iroh://bafkr4imica1020000000000000000000000000000000000000000000000102",
-                previewContent: JSON.stringify({
-                    jurisdiction: "EU-MiCA-Statutory",
-                    dao: "Europe Regional DAO",
-                    address: "0x0000000000000000000000000000000000000102",
-                    supervisor: "0x0000000000000000000000000000000000000201",
-                    solvency_status: "Fully Collateralized",
-                    unspent_notes_count: 42,
-                    total_reserve_wei: "2500000000000000000000000"
-                }, null, 2)
-            }
-        ],
-        slots: [
-            { slotId: 1, pluginId: "core.zanzibar", commitment: "0x0000000000000000000000000000000000000102000000000000000000000000", description: "Zanzibar ReBAC SMT (Precompile 0x61)" },
-            { slotId: 2, pluginId: "core.native_payment", commitment: "0xbaf1020000000000000000000000000000000000000000000000000000000102", description: "Native Payment Core / Blind Note Vault" },
-            { slotId: 8, pluginId: "dao.voting_weight", commitment: "0x0000000000000000000000000000000000000102000000000000000000000000", description: "Regional Voting SMT Root" },
-            { slotId: 0x53, pluginId: "iroh.storage", commitment: "0xbaf1020000000000000000000000000000000000000000000000000000000102", description: "Iroh Content-Addressed Storage DA (Precompile 0x53)" }
-        ]
+                filename: 'tinyblock_treasury_solvency.json',
+                irohTicket: 'iroh://bafkr4ih86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d'
+            });
+        } else if (daoId === '0x0000000000000000000000000000000000000102') {
+            dataRefs.push({
+                datasetId: '0xbaf1020000000000000000000000000000000000000000000000000000000102',
+                blake3Root: '0xbaf1020000000000000000000000000000000000000000000000000000000102',
+                sizeFormatted: '25.50 GB',
+                namespace: 'dao_europe/mica_statutory_solvency_2026',
+                leaseEpochs: 120,
+                filename: 'mica_statutory_solvency_2026.json',
+                irohTicket: 'iroh://bafkr4imica2026europe'
+            });
+        } else {
+            dataRefs.push({
+                datasetId: `0x${daoAddress.replace('0x', '').padEnd(64, '0')}`,
+                blake3Root: `0xbaf${daoAddress.replace('0x', '').padEnd(61, '0')}`,
+                sizeFormatted: '1.20 KB',
+                namespace: `${daoNode.label?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'dao'}/solvency_audit`,
+                leaseEpochs: 100,
+                filename: 'solvency_audit.json',
+                irohTicket: `iroh://bafkr4i${daoAddress.replace('0x', '').slice(0, 32)}`
+            });
+        }
+
+        const daoName = daoId === '0x0000000000000000000000000000000000000101'
+            ? 'Tinyblock Global DAO (dao-global-tinyblock)'
+            : daoId === '0x0000000000000000000000000000000000000102'
+                ? 'Europe Regional DAO (dao-europe)'
+                : daoNode.label || `DAO ${daoAddress.slice(0, 10)}...`;
+
+        daos.push({
+            daoName,
+            daoId,
+            avatar: daoAddress,
+            owner: roles.find(r => r.level === 'Root')?.subject || daoAddress,
+            roles,
+            dataRefs,
+            slots: [
+                { slotId: 1, pluginId: 'core.zanzibar', commitment: '0x0', description: 'Zanzibar ReBAC SMT' },
+                { slotId: 2, pluginId: 'core.native_payment', commitment: '0x0', description: 'Blind Note Vault' },
+                { slotId: 8, pluginId: 'dao.voting_weight', commitment: '0x0', description: 'Voting Weight SMT' }
+            ]
+        });
     }
-];
+    return daos;
+}
+
+export const REAL_SOVEREIGN_DAOS: ZodiacDaoData[] = parseGenesisDaos(genesisGraphData);
 
 export function cloneDao(d: ZodiacDaoData): ZodiacDaoData {
     return {
         ...d,
-        roles: d.roles.map(r => ({ ...r })),
-        dataRefs: d.dataRefs.map(dr => ({ ...dr })),
+        roles: d.roles ? d.roles.map(r => ({ ...r })) : [],
+        dataRefs: d.dataRefs ? d.dataRefs.map(dr => ({ ...dr })) : [],
         slots: d.slots ? d.slots.map(s => ({ ...s })) : undefined,
         unspentBlindNotes: d.unspentBlindNotes ? [...d.unspentBlindNotes] : undefined
     };
@@ -416,11 +431,18 @@ export class ZodiacDaoPanel extends BaseElement {
     private _machine: ZodiacDaoStateMachine = new ZodiacDaoStateMachine();
     private _unsub: (() => void) | null = null;
     private _delegatedBound: boolean = false;
-    private _daoData: ZodiacDaoData = this._daos[0];
+    private _daoData: ZodiacDaoData = this._daos[0] || {
+        daoName: "Loading Canonical DAOs...",
+        daoId: "0x0000000000000000000000000000000000000000",
+        avatar: "0x0000000000000000000000000000000000000000",
+        owner: "0x0000000000000000000000000000000000000000",
+        roles: [],
+        dataRefs: []
+    };
 
     constructor() {
         super();
-        this._daoData = this._daos[0];
+        this._daoData = this._daos[0] || this._daoData;
     }
 
     createRenderRoot(): HTMLElement {
@@ -442,7 +464,22 @@ export class ZodiacDaoPanel extends BaseElement {
             (this as any).requestUpdate?.();
         });
         this._bindEvents();
+        this._fetchGenesisGraphIfNeeded();
+        this._syncWithRpc();
         this.render();
+    }
+
+    async _fetchGenesisGraphIfNeeded(): Promise<void> {
+        try {
+            if (typeof fetch === 'undefined') return;
+            const res = await fetch('/genesis_graph.json').catch(() => null);
+            if (res && res.ok) {
+                const data = await res.json();
+                if (data && Array.isArray(data.nodes) && Array.isArray(data.edges)) {
+                    this.loadFromGraph(data);
+                }
+            }
+        } catch (_) {}
     }
 
     disconnectedCallback(): void {
@@ -470,6 +507,7 @@ export class ZodiacDaoPanel extends BaseElement {
         this.viewingKey = viewingKey ? viewingKey.trim() : null;
 
         this._syncWithGraph();
+        this._syncWithRpc();
 
         if (this.activeAddress) {
             const matchIndex = this._daos.findIndex(d => this._isAddressAuthorizedFor(d, this.activeAddress!));
@@ -489,6 +527,83 @@ export class ZodiacDaoPanel extends BaseElement {
         }
         this.render();
         (this as any).requestUpdate?.();
+    }
+
+    async _syncWithRpc(): Promise<void> {
+        try {
+            const addr = this.activeAddress || '0x0000000000000000000000000000000000000000';
+            const res = await callBunnyRpc("sovereign_getDaoProposals", [addr]).catch(() => null);
+            if (res && res.result && Array.isArray(res.result.availableDaos)) {
+                for (const d of res.result.availableDaos) {
+                    if (!d.address) continue;
+                    const dAddr = d.address.toLowerCase();
+                    const existingIdx = this._daos.findIndex(x => x.daoId.toLowerCase() === dAddr || (x.avatar && x.avatar.toLowerCase() === dAddr));
+                    if (existingIdx !== -1) {
+                        const existing = this._daos[existingIdx];
+                        if (this.activeAddress && (d.isMember || d.isOwner)) {
+                            if (!existing.roles.some(r => r.subject.toLowerCase() === this.activeAddress)) {
+                                existing.roles.push({
+                                    relation: d.isOwner ? "Owner (0x0001)" : "Member (0x0001)",
+                                    subject: this.activeAddress,
+                                    level: d.isOwner ? "Root" : "Member"
+                                });
+                            }
+                        }
+                    } else if (d.isMember || d.isOwner || (this.viewingKey && this.viewingKey.length > 0)) {
+                        this._daos.push({
+                            daoName: d.name || `DAO ${d.address.slice(0, 10)}...`,
+                            daoId: d.address,
+                            avatar: d.address,
+                            owner: d.isOwner && this.activeAddress ? this.activeAddress : d.address,
+                            roles: [
+                                {
+                                    relation: d.isOwner ? "Owner (0x0001)" : "Member (0x0001)",
+                                    subject: this.activeAddress || d.address,
+                                    level: d.isOwner ? "Root" : "Member"
+                                }
+                            ],
+                            dataRefs: [
+                                {
+                                    datasetId: `0x${d.address.replace('0x', '').padEnd(64, '0')}`,
+                                    blake3Root: `0xbaf${d.address.replace('0x', '').padEnd(61, '0')}`,
+                                    sizeFormatted: "512 B",
+                                    namespace: `${d.name?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'dao'}/solvency_audit`,
+                                    leaseEpochs: 100,
+                                    filename: "solvency_audit.json",
+                                    irohTicket: `iroh://bafkr4i${d.address.replace('0x', '').slice(0, 32)}`,
+                                    previewContent: JSON.stringify({
+                                        dao: d.name,
+                                        address: d.address,
+                                        isMember: d.isMember,
+                                        isOwner: d.isOwner
+                                    }, null, 2)
+                                }
+                            ],
+                            slots: [
+                                { slotId: 1, pluginId: "core.zanzibar", commitment: "0x0", description: "Zanzibar ReBAC SMT" },
+                                { slotId: 2, pluginId: "core.native_payment", commitment: "0x0", description: "Blind Note Vault" },
+                                { slotId: 8, pluginId: "dao.voting_weight", commitment: "0x0", description: "Voting Weight SMT" }
+                            ]
+                        });
+                    }
+                }
+                if (this._daos.length > 0) {
+                    if (!this._daoData || this._daoData.daoId === "0x0000000000000000000000000000000000000000") {
+                        this._daoData = this._daos[0];
+                        this.activeDaoIndex = 0;
+                    }
+                }
+                if (this.activeAddress) {
+                    const matchIdx = this._daos.findIndex(d => this._isAddressAuthorizedFor(d, this.activeAddress!));
+                    if (matchIdx !== -1) {
+                        this.activeDaoIndex = matchIdx;
+                        this._daoData = this._daos[matchIdx];
+                    }
+                }
+                this.render();
+                (this as any).requestUpdate?.();
+            }
+        } catch (_) {}
     }
 
     loadActiveDaos(graphData: any, activeAddress?: string | null): void {
@@ -629,8 +744,21 @@ export class ZodiacDaoPanel extends BaseElement {
      * Real Iroh Content-Addressed Storage Fetcher
      */
     async fetchIrohBlob(ticketOrCid: string): Promise<any> {
+        let cleanId = ticketOrCid.replace(/^iroh:\/\//, '').trim();
         try {
-            const url = `/storage/blob/${encodeURIComponent(ticketOrCid)}`;
+            const res = await callBunnyRpc("sovereign_resolveBlob", [cleanId]);
+            if (res && res.result) {
+                if (res.result.utf8) {
+                    try { return JSON.parse(res.result.utf8); } catch(_) { return res.result.utf8; }
+                }
+                if (res.result.data) {
+                    return res.result.data;
+                }
+            }
+        } catch (_) {}
+
+        try {
+            const url = `/storage/blob/${encodeURIComponent(cleanId)}`;
             const res = await fetch(url);
             if (res.ok) {
                 return await res.json();
@@ -735,17 +863,18 @@ export class ZodiacDaoPanel extends BaseElement {
         const calldataHex = toHex(payload);
         const noteRegistryAddress = "0x0000000000000000000000000000000000000065";
 
-        const res = await callBunnyRpc("eth_sendTransaction", [{
+        const txHash = await sendEvmTransaction({
             from: targetAccount,
             to: noteRegistryAddress,
             data: calldataHex,
             gas: "0x7a120"
-        }]);
+        });
 
-        return res?.result || "0x_absorbed_ok";
+        return txHash;
     }
 
     private _isAddressAuthorizedFor(dao: ZodiacDaoData, addr: string): boolean {
+        if (!dao) return false;
         const a = addr.toLowerCase();
         if (dao.owner && dao.owner.toLowerCase() === a) return true;
         if (dao.avatar && dao.avatar.toLowerCase() === a) return true;

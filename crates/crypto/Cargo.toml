@@ -3,6 +3,7 @@ name = "sovereign-crypto"
 version = "0.1.0"
 edition = "2021"
 authors = ["Citrullin"]
+license = "LGPL-2.1"
 description = "Sovereign Reth native base-layer cryptography and profiles"
 
 [dependencies]
