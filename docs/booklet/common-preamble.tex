@@ -1,0 +1,93 @@
+% ============================================================================
+%  common-preamble.tex -- shared packages, colours, boxes and status macros for
+%  the Sovereign Bunny paper set (all papers except the base booklet, which
+%  keeps its own preamble). Each paper sets its own \documentclass, hyperref
+%  metadata and fancyhdr heads (see \setpaperheads).
+% ============================================================================
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{microtype}
+\usepackage[margin=2.5cm,headheight=14pt]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,longtable,array}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,backgrounds}
+\usepackage{caption}
+\usepackage{needspace}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+\tcbuselibrary{breakable}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{float}
+\usepackage{ragged2e}
+\usepackage[hidelinks]{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+
+\setlength{\parindent}{0pt}
+\captionsetup{font=small,labelfont=bf,justification=centering}
+
+\definecolor{ink}{HTML}{1B2A41}
+\definecolor{accent}{HTML}{0B7A75}
+\definecolor{warn}{HTML}{B5472B}
+\definecolor{mute}{HTML}{5C6B7A}
+\definecolor{codebg}{HTML}{F8FAFC}
+\addtokomafont{section}{\color{ink}}
+\addtokomafont{subsection}{\color{ink}}
+\addtokomafont{subsubsection}{\color{ink}}
+\setlist{itemsep=2pt,topsep=4pt}
+
+\lstdefinestyle{customcode}{
+  backgroundcolor=\color{codebg},commentstyle=\color{mute}\itshape,
+  keywordstyle=\color{accent}\bfseries,stringstyle=\color{warn},
+  basicstyle=\ttfamily\scriptsize,breaklines=true,captionpos=b,keepspaces=true,
+  showstringspaces=false,frame=single,rulecolor=\color{mute!30},tabsize=2}
+\lstdefinelanguage{Rust}{
+  keywords={true,false,struct,enum,fn,let,mut,pub,impl,for,if,else,match,return,const,u8,u16,u32,u64,usize,bool,String,Vec,Result,Ok,Err,Option,Some,None,use,self,Self},
+  sensitive=true,comment=[l]{//},morecomment=[s]{/*}{*/},morestring=[b]"}
+\lstdefinelanguage{JSON}{
+  string=[s]{"}{"},stringstyle=\color{warn},comment=[l]{//},
+  morekeywords={true,false,null},keywordstyle=\color{accent}\bfseries}
+\lstdefinelanguage{TypeScript}{
+  keywords={export,interface,type,const,let,function,async,await,return,import,from,new,readonly,number,string,bigint,boolean,void,Promise,Map,Uint8Array,ReadableStream,true,false},
+  sensitive=true,comment=[l]{//},morecomment=[s]{/*}{*/},morestring=[b]",morestring=[b]'}
+\lstset{style=customcode}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\IfFileExists{build/meta.tex}{\input{build/meta.tex}}{%
+  \newcommand{\bookletcommit}{unversioned}%
+  \newcommand{\bookletdate}{\today}}
+
+\newcommand{\EUR}[1]{\texteuro\,#1}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\claim}[1]{\textcolor{warn}{[#1]}}
+\newcommand{\stImpl}{\textcolor{accent}{\textbf{Implemented}}}
+\newcommand{\stPart}{\textcolor{mute}{\textbf{Partial}}}
+\newcommand{\stStub}{\textcolor{warn}{\textbf{Stub / unsafe}}}
+\newcommand{\stSpec}{\textcolor{mute}{\textbf{Specified}}}
+\newcommand{\stPlan}{\textcolor{mute}{\textbf{Planned}}}
+\newcommand{\stRes}{\textcolor{warn}{\textbf{Research}}}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+
+\newtcolorbox{keybox}[2][]{%
+  breakable,colback=accent!6,colframe=accent,boxrule=0.6pt,arc=2pt,
+  left=7pt,right=7pt,top=3pt,bottom=3pt,
+  fonttitle=\bfseries,coltitle=accent,colbacktitle=accent!6,
+  title={#2},before skip=4pt,after skip=4pt,#1}
+\newtcolorbox{warnbox}[2][]{%
+  breakable,colback=warn!5,colframe=warn,boxrule=0.6pt,arc=2pt,
+  left=7pt,right=7pt,top=4pt,bottom=4pt,
+  fonttitle=\bfseries,coltitle=warn,colbacktitle=warn!5,
+  title={#2},before skip=6pt,after skip=6pt,#1}
+
+\raggedbottom
+\newcommand{\setpaperheads}[2]{\fancyhead[LE,RO]{\small\color{mute}#1}\fancyhead[RE,LO]{\small\color{mute}#2}}
+\newcommand{\booklet}{the Sovereign Bunny whitebooklet}

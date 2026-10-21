@@ -1,0 +1,95 @@
+% ============================================================================
+%  Sovereign Bunny -- The Stateless Account-Lattice (ledger component paper)
+%  SKELETON: outline and content-migration map only. Base: sovereign-booklet.tex
+% ============================================================================
+\documentclass[a4paper,11pt,twoside,parskip=half-,headings=small]{scrartcl}
+\input{common-preamble.tex}
+\hypersetup{pdftitle={Sovereign Bunny: The Stateless Account-Lattice},pdfauthor={Sovereign Bunny contributors},pdfsubject={Actors, the 64-slot Compact Account Register, epoch consensus},pdfkeywords={sovereign bunny, account-lattice, car, zanzibar, blind notes, snow, paxos}}
+\setpaperheads{Sovereign Bunny: The Stateless Account-Lattice}{Sovereign Bunny paper set -- Ledger}
+
+\begin{document}
+\begin{titlepage}
+  \centering
+  \vspace*{2.2cm}
+  {\color{mute}\scshape\large Component Paper (skeleton)\par}
+  \vspace{0.6cm}
+  {\color{ink}\Huge\bfseries Sovereign Bunny\par}\vspace{0.4cm}
+  {\color{accent}\Large The Stateless Account-Lattice\par}
+  \vspace{0.8cm}
+  {\large The simple one: one primitive, the Actor, with a 64-slot Compact Account Register\par}
+  \vfill
+  \begin{tabular}{rl}
+    \textbf{Status}   & Skeleton -- content still lives in the whitebooklet\\
+    \textbf{Base}     & Sovereign Bunny whitebooklet v0.5\\
+    \textbf{Revision} & \code{\bookletcommit}\\
+    \textbf{Built}    & \bookletdate\\
+  \end{tabular}
+  \vspace*{2.2cm}
+\end{titlepage}
+
+\section{Purpose and design rule}
+This paper is the normative description of the \emph{ledger only}. Its design rule is deliberately small:
+\begin{keybox}{One primitive}
+There is exactly one kind of participant, the \textbf{Actor}: a single-writer, append-only micro-chain carrying a 64-slot Compact Account Register (CAR).
+Persons, devices, terminals, DAOs, banks and states are all Actors. Anything institutional is a \emph{configuration} of Actors expressed through slots, never a new account type.
+\end{keybox}
+Institutional behaviour (multi-seed reputation, elections, audit, macro control) is out of scope and belongs to the Hive paper; packaging and deployment belong to the Stack paper;
+the economic argument belongs to the whitebooklet.
+
+\section{Proposed outline and migration map}
+The right-hand column names the whitebooklet material to move or condense. Nothing has been moved yet; the whitebooklet remains authoritative until a section is migrated and its copy there is reduced to a summary and pointer.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{4.6cm}Y@{}}
+\toprule
+\textbf{Section of this paper} & \textbf{Source in the whitebooklet (by topic)} \\
+\midrule
+Actors and the CAR layout (slots 0--63) & Architecture: stateless account-lattice, slot table \\
+Slot 0: DID identity, zkOIDC & zkOIDC section \\
+Slot 1: Zanzibar relationship tuples & Slot table; deReBAC examples \\
+Slot 2: Blind Notes, view tags & Confidential voting; view-tag scanner; cross-chain Blind Notes \\
+Slot 3: repository state anchoring & Radicle Git slots \\
+Slot 4: Proof of SQL anchors & SQL anchor section \\
+Lattice Sagas and cross-actor locking & Saga locking section \\
+Epoch consensus: Rotating Paxos and Snow & Consensus and Snow sections \\
+Wire format and cryptographic stratification & Wire format; crypto stratification; PQ compression \\
+Stateless verification and witnesses & Stateless execution material \\
+Honest implementation status & Status register; regression deconstruction \\
+\bottomrule
+\end{tabularx}
+\caption{Content-migration map for the ledger paper.}
+\end{table}
+
+\section{Normative client invariants}
+\label{sec:client_invariants}
+
+The ledger verifies frames; it does not care how a client built them. To keep clients interoperable without freezing a framework into the protocol, the client side is specified as an abstract, language-agnostic machine. A Rust daemon, a firmware loop on a badge, a Python connector, a mobile app or a browser store is conformant if it satisfies four invariants. Frameworks (WASM, Lit, XState) are reference implementations, described in the Stack paper, and are not normative. This is the same discipline as treating the number of regional DAOs as a deployment parameter rather than a protocol constant.
+
+\begin{enumerate}
+  \item \textbf{Pure local transition.} Every local mutation is a deterministic function over a detached Virtual CAR Register $\widehat{\mathbf{R}}=(\hat R_0,\dots,\hat R_{63})$:
+  \begin{equation}
+    (\widehat{\mathbf{R}}_{t+1},\ \Delta_{\text{slot}},\ W)=\Upsilon_{\text{local}}(\widehat{\mathbf{R}}_t,\ \text{Event}),
+  \end{equation}
+  where $\Delta_{\text{slot}}$ is the canonical byte delta and $W$ the private witness needed to prove the transition. $\Upsilon_{\text{local}}$ performs no network I/O, reads no wall clock, and uses no floating point; quantities feeding a committed root are fixed-point integers.
+  \item \textbf{Owned versus contended events.} Events partition into \emph{owned-slot mutations} $\mathcal E_{\text{own}}$ (single-writer, $n_{\text{prop}}=n_{\text{cur}}+1$) and \emph{cross-actor intents} $\mathcal E_{\text{saga}}$ (Blind Note emission, multi-account sagas) that depend on other actors. The latter are asynchronous state machines with explicit failure states ($\text{Pending}\to\text{Locked}\to\text{Settled}\mid\text{Compensated}$). A client API must make the two classes syntactically distinct so a local write is never mistaken for a global lock.
+  \item \textbf{Three-stage lifecycle.} A mutation is observably in one of: \emph{Staged} (durably recorded locally, not yet proven), \emph{Sealed} (proof generated and signed into a \code{BNY\textbackslash x01} frame), \emph{Anchored} (accepted into an epoch root); or in \emph{Rejected}. Rejection is possible from Sealed as well as Staged: a frame may fail on a nonce conflict, an invalid proof, or a saga lock. When a Sealed frame is rejected, every later frame that depended on it must also be rolled back or re-derived. Terminology matters: ``accepted locally'' is not ``anchored'', and a client must never present Staged or Sealed state as final.
+  \item \textbf{Canonical byte boundary.} The authoritative state of the Virtual CAR lives in a language-agnostic SSZ byte buffer. A host language reads and writes typed views of that buffer; it never keeps canonical state in its native object model, whose number representation or key ordering could change a Merkle root.
+\end{enumerate}
+
+\paragraph{Offline operation and the single-writer hazard.} A client may accumulate Staged and Sealed frames during an outage and flush them on reconnection. Frames chain through the nonce and the prior roots, so they must flush in order. Because an Actor is single-writer, two devices holding the same signing key that both seal nonce $n+1$ produce an equivocation. A conformant client therefore needs an exclusive writer lease (one active sealing device per Actor, or a key-per-device delegation through Slot~1 tuples) and must not seal without it \claim{design requirement; not yet specified in the lattice}.
+
+\paragraph{Signature policy.} Sealing is fail-closed: if the signer declines, the draft is discarded and live local state is unchanged. The cost of a hardware prompt per frame is a usability concern; batching several staged mutations into one frame is permitted so long as the frame remains a single pure transition.
+
+\paragraph{Conformance.} Invariants are checked by language-neutral golden vectors (serialised pre-state, event, expected post-state roots and delta), maintained alongside the Hive resolver plan so the same fixtures exercise every host language.
+
+\section{Open decisions before migration}
+\begin{itemize}
+  \item Whether normative listings move wholesale or stay in the whitebooklet with the paper citing them.
+  \item A single status register shared by all papers, so status words cannot drift apart.
+  \item A shared bibliography file for the paper set (currently each new paper carries a short inline list).
+  \item \textbf{Slot-table harmonization (Resolved):} The slot table assigns Slot~5 to the Consensus \& Epoch Engine (Rotating Paxos lease, epoch transition proofs), Slot~7 to the Lattice Saga Lock and \code{allow\_saga\_locking} policy byte, and Slot~8 to Operational Surety Bonds (locked \$RAD / \$TINY surety escrows and canonical routing bonds).
+  \item Specification of the exclusive writer lease for multi-device Actors (see the client invariants).
+\end{itemize}
+
+\end{document}

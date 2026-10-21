@@ -1,0 +1,281 @@
+% ============================================================================
+%  Sovereign Bunny Hive -- Institutional Layer and the Scene-Graph Resolver
+%  Part of the Sovereign Bunny paper set. Base document: sovereign-booklet.tex
+%  Build:   make -C docs/booklet papers   (run on the remote build host only)
+% ============================================================================
+\documentclass[a4paper,11pt,twoside,parskip=half-,headings=small]{scrartcl}
+\input{common-preamble.tex}
+\hypersetup{pdftitle={Sovereign Bunny Hive: Institutional Layer and the Scene-Graph Resolver},pdfauthor={Sovereign Bunny contributors},pdfsubject={Polycentric reputation, relationship-native authority, and a memoized graph resolver},pdfkeywords={sovereign bunny, hive, meritrank, zanzibar, reconciliation, bsp, pvs, memoization, scheduling}}
+\setpaperheads{Sovereign Bunny Hive}{Sovereign Bunny paper set -- Hive (planned)}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2.2cm}
+  {\color{mute}\scshape\large Component Paper \& Implementation Plan\par}
+  \vspace{0.6cm}
+  {\color{ink}\Huge\bfseries Sovereign Bunny Hive\par}\vspace{0.4cm}
+  {\color{accent}\Large The Institutional Layer and a Scene-Graph Resolver\\for Graphs of Graphs\par}
+  \vspace{0.8cm}
+  {\large Polycentric reputation, relationship-native authority, and $\text{Frame}=f(\text{WorldState})$\par}
+  \vfill
+  \begin{tabular}{rl}
+    \textbf{Status}   & Draft -- \stPlan{}: no Hive-specific code exists\\
+    \textbf{Base}     & Sovereign Bunny whitebooklet v0.5\\
+    \textbf{Revision} & \code{\bookletcommit}\\
+    \textbf{Built}    & \bookletdate\\
+    \textbf{Licence}  & CC BY-SA 4.0 (text); Apache-2.0 (code samples)\\
+  \end{tabular}
+  \vspace{1.0cm}
+  \begin{minipage}{0.84\textwidth}\small\color{mute}
+  Status words follow the whitebooklet: \stImpl{}, \stPart{}, \stSpec{}, \stPlan{}, \stRes{}.
+  Performance figures in this paper are targets or back-of-envelope estimates unless a benchmark is cited;
+  none has been measured on the Hive yet.
+  \end{minipage}
+  \vspace*{1.2cm}
+\end{titlepage}
+
+\begin{abstract}
+\noindent
+The whitebooklet defines a stateless account-lattice in which every participant is an Actor with a 64-slot
+Compact Account Register (CAR). The \emph{Hive} is the planned institutional layer built on that single primitive:
+multi-seed, observer-relative reputation; elections and roles expressed as relationship tuples; and telemetry-driven
+audit and macroeconomic control. It introduces \emph{no} new ledger primitive. This paper does two things. First, it fixes
+the Hive's scope against the other components. Second, it proposes an implementation strategy borrowed from two
+architectures that solved the same problem, resolving a large, mostly-irrelevant graph quickly and consistently:
+the 1990s 3D engine (a frame as a pure function of world state, with visibility culling) and the React reconciler (a virtual
+tree, structural sharing, and cooperative scheduling). We map four techniques onto the lattice, state the soundness
+conditions that the informal analogy omits, correct the first sketch, and give a phased plan with acceptance tests.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Scope and layering}
+\label{sec:scope}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{3.1cm}YL{3.2cm}@{}}
+\toprule
+\textbf{Component} & \textbf{Responsibility} & \textbf{Document} \\
+\midrule
+Sovereign Bunny & Stateless account-lattice, CAR, epoch consensus, Blind Notes, Zanzibar tuples & Ledger paper \\
+Bunny Stack & NixOS flakes, SGX packaging, deployment, end-to-end types & Stack paper \\
+\textbf{Bunny Hive} & Multi-seed reputation, role elections, telemetry audit, macro control, graph resolver & \textbf{This paper} \\
+Radicle critique & Network sovereignty of a third-party system; ledger optional & Radicle paper \\
+Whitebooklet & Circular cryptographic economy; the shared base all papers cite & Base \\
+\bottomrule
+\end{tabularx}
+\caption{The paper set. Every paper may cite the whitebooklet; none may be required to read another sibling.}
+\end{table}
+
+\paragraph{What belongs where.} The multi-seed MeritRank specification and the ``authority as a relationship''
+argument are part of the circular cryptographic economy and live in the whitebooklet (its Sybil-resistance section).
+This paper does not restate them. It takes them as inputs and asks how to \emph{evaluate} them at scale.
+
+\paragraph{Invariant.} Everything the Hive does is expressed through Slot~0 identity, Slot~1 Zanzibar tuples, Slot~2 Blind Notes,
+Slot~4 SQL commitments and Slot~6 governance accumulators. If a Hive feature seems to need a new base-ledger primitive, the feature is
+wrong or the base is incomplete, and that is a design bug to be raised against the ledger paper.
+
+\section{The problem: resolving graphs of graphs}
+\label{sec:problem}
+
+A relationship graph of DAOs of DAOs, with a seed-set reputation over it, is expensive if every query walks the whole world.
+The same shape of problem appeared twice before:
+\begin{itemize}
+  \item \textbf{In-place mutation of a complex scene graph} produced catastrophic synchronisation bugs. The remedy was to treat each frame as a
+        pure function of state, $\text{Frame}=f(\text{WorldState})$: build a lightweight virtual representation, cull what cannot be seen,
+        diff against the previous frame, and flush only the minimal change.
+  \item \textbf{Mutating a live UI tree} had the same failure. The remedy was a virtual tree, a diff, skipping unchanged subtrees by identity,
+        and a scheduler that keeps urgent work responsive while heavy work yields.
+\end{itemize}
+The lattice is unusually well suited to both, because each Actor's CAR already stores \emph{cryptographic commitments to subtrees}, and the wallet client
+already models components as independent state machines (\path{wallet/ts/src/lattice_machine.ts}) \claim{verify: the claimed 1:1 correspondence between UI actors
+and on-chain actors is a design intent, not yet audited}. A Merkle root is a subtree identity that cannot be forged, which is stronger than the pointer equality React relies on.
+
+\begin{keybox}{What the analogy gives us, and what it does not}
+It gives a structure (virtual tree, culling, memoization, lanes) and a vocabulary for test oracles. It does \emph{not} give soundness for free. A game
+may render a wrong pixel; a consensus system may not accept a wrong authority. Every optimisation below is therefore specified as
+\emph{semantics-preserving}: the optimised resolver must return exactly what the naive full-walk resolver returns.
+\end{keybox}
+
+\section{Four techniques, with the conditions the analogy omits}
+\label{sec:techniques}
+
+\subsection{Double-buffered reconciliation: the Virtual CAR Tree}
+
+\textbf{Mapping.} A multi-party workflow (a Lattice Saga across several DAOs) is executed on a detached \emph{Virtual CAR Tree} in RAM: resolve Slot~1 tuples,
+update Slot~4 commitments, balance Slot~2 notes, all in memory. When the tree settles, diff the 64 slots against the live micro-chain and commit one atomic state header.
+The stateless verifier's in-memory witness store (\path{crates/consensus/src/execution/stateless.rs}, \code{WitnessDatabase}) is the natural starting point \claim{verify: scope of existing use}.
+
+\textbf{Conditions.}
+\begin{enumerate}[nosep]
+  \item \emph{Determinism.} The reconciler is a pure function: canonical slot ordering, no wall-clock, no unordered iteration, no floating point in anything that feeds a committed root
+        (multi-seed rank must use fixed-point or a specified rounding mode before commitment).
+  \item \emph{Atomicity.} Either all mutated slots commit under one header or none do. A saga that fails midway leaves the live chain untouched; this is the whole point of the virtual buffer.
+  \item \emph{Delta proofs.} Proving only the mutated slot roots $\Delta R_k$ requires that a header proof composes per-slot proofs (recursion or aggregation) and binds the unchanged roots by equality.
+        This is \stSpec{} at best; the booklet's per-circuit proofs do not yet compose this way.
+\end{enumerate}
+
+\textbf{Oracle.} Apply a saga (a) sequentially to the live chain and (b) on the virtual tree then commit. The resulting header must be byte-identical, for randomly generated sagas including failing ones.
+
+\subsection{Subgraph culling: potentially visible sets}
+
+\textbf{Mapping.} An Actor's appointed DAO subgraphs form its visibility frustum. A compact per-actor bitmask over DAO namespaces lets a resolver discard unrelated subgraphs with a bitwise AND before touching disk. The ledger already uses two relatives:
+the compressed cuckoo filter over gossip swarms (\path{crates/network/src/signal_swarm.rs}) and the one-byte view tag of the note scanner (\path{crates/consensus/src/lattice/view_tag_scanner.rs}).
+
+\textbf{Conditions.}
+\begin{enumerate}[nosep]
+  \item \emph{Conservative only.} A mask is a Bloom-style \emph{superset}: it may say ``maybe visible'' wrongly, never ``not visible'' wrongly. Culling is then sound, because a false positive only costs a full walk.
+  \item \emph{Never a security decision.} The mask accelerates search. Authority is decided only by the tuple path and its proof. A verifier must not trust a prover's mask.
+  \item \emph{Culling power is limited by density.} For a 256-bit mask where each side sets $a$ and $b$ bits, the probability of a spurious overlap is approximately $1-(1-a/256)^b$. With $a=b=2$ this is about 1.6\%; with $a=b=16$ it is about 64\%.
+        A 256-bit mask therefore culls $\approx$99\% only when each frustum is tiny (a handful of DAOs). Larger frustums need a wider mask or hierarchical masks (mask of masks per DAO tier). The one-byte view tag is different: a single byte matched against one value has a $1/256$ false-positive rate, which is where the familiar 99.6\% figure comes from.
+  \item \emph{Privacy.} A public mask leaks the owner's DAO memberships. Masks should be computed locally by the observer from its own appointment tuples and the namespaces it has chosen to follow, and not published.
+\end{enumerate}
+
+\textbf{Oracle.} Property test: for random graphs, \code{resolve\_with\_cull} equals \code{resolve\_full\_walk} on every pair (no false negatives). Separately measure the cull rate as a function of frustum size.
+
+\subsection{Structural sharing: memoized subtree skipping}
+
+\textbf{Mapping.} If a sub-DAO's Slot~1 Merkle root is unchanged since a previous resolution, its previously verified sub-proof $\pi_{\text{sub}}$ can be reused in $O(1)$ without traversing the subtree.
+
+\textbf{Conditions.}
+\begin{enumerate}[nosep]
+  \item \emph{The cache key is the whole input of the statement, not one root.} A proof about ``observer $\to$ target'' depends on the observer's appointment root, the target's Slot~1 root, the active seed-set digest, and the rank parameters.
+        A key of \code{(observer\_r1, target\_r1, seed\_set\_digest, params\_digest)} is sound; comparing the target's root against a single global ``previous epoch root'' (as in the first sketch) is not.
+  \item \emph{Revocation must invalidate.} If the observer revokes its appointment tuple, its own root changes, so the key changes and the cache cannot serve a stale authority.
+  \item \emph{Time-bounded roles.} Roles with an expiry epoch must include the epoch (or the expiry bound) in the statement, or a cached proof will outlive the role.
+  \item \emph{Bounded memory and no cross-observer leakage.} The cache is observer-local, size-bounded, and never shared across trust domains.
+\end{enumerate}
+
+\textbf{Oracle.} For random mutation sequences, memoized resolution must equal recomputation from scratch after every step.
+
+\subsection{Cooperative scheduling: two lanes}
+
+\textbf{Mapping.} The urgent lane carries single-writer slot updates and physical taps (target under $10$\,ms, locally or via the Paxos ring). The background lane carries heavy institutional solving (power iterations, netting cycle cancellation, nested accumulator folding), spread over 10-second epochs and pinned by the Snow sampling layer.
+
+\textbf{Conditions.}
+\begin{enumerate}[nosep]
+  \item \emph{Deterministic slicing.} UI schedulers slice by wall-clock deadlines. Consensus tasks must not. A background task is divided into units of \emph{counted work} (iterations, edges visited) so every honest node reaches the same checkpoint regardless of machine speed.
+  \item \emph{Defined staleness.} The urgent lane reads the last pinned epoch snapshot, never a half-finished background result. A read is therefore stale by at most one epoch, and results carry their epoch number. Anything that cannot tolerate that bound (for example a revocation) is an urgent-lane write that takes effect on its own commit and is checked by the verifier against the current header.
+  \item \emph{Priority inversion.} The urgent lane never waits on a background lock. Background tasks work on immutable snapshots and publish by atomic swap at the epoch boundary.
+\end{enumerate}
+
+\textbf{Oracle.} Run the same background task on nodes with different CPU budgets; the checkpoint states must be byte-identical.
+
+\section{Revised resolver sketch}
+\label{sec:sketch}
+
+The first sketch combined the techniques in a single function. It had three flaws: a single \code{previous\_epoch\_root} cache comparison; a mask carried on a shared node structure (implying publication); and an \code{Option} return that conflates ``culled'', ``no relationship'' and ``cache miss''. The revision below separates them. It is a \stSpec{} sketch, not workspace code.
+
+\begin{lstlisting}[language=Rust,caption={Specification sketch: memoized, culling resolver. Culling and caching are optimisations; the proof is the authority.}]
+pub type Root = [u8; 32];
+
+/// Local to the observer; never published.
+pub struct Frustum { pub mask: [u64; 4] } // conservative superset of followed DAO namespaces
+
+#[derive(Hash, PartialEq, Eq, Clone)]
+pub struct MemoKey {
+    pub observer_r1: Root,        // changes on revocation => cache miss
+    pub target_r1: Root,
+    pub seed_set_digest: Root,
+    pub params_digest: Root,      // damping, decay, min_seed_diversity, epoch bounds
+}
+
+pub enum Resolution {
+    Culled,                       // provably no shared frustum; nothing was walked
+    NoPath,                       // walked, no valid relationship
+    Proven(ProofOfRelationship),  // fresh or cached; verifier re-checks against the header
+}
+
+pub struct HiveResolver {
+    cache: BoundedLru<MemoKey, ProofOfRelationship>,
+}
+
+impl HiveResolver {
+    pub fn resolve(&mut self, obs: &ActorView, tgt: &ActorView, ctx: &EpochCtx) -> Resolution {
+        // 1. Culling: sound because Frustum is a superset (no false negatives).
+        if !obs.frustum.intersects(&tgt.public_namespaces) {
+            return Resolution::Culled;
+        }
+        // 2. Memoization keyed on the complete statement.
+        let key = MemoKey {
+            observer_r1: obs.car_roots[1],
+            target_r1: tgt.car_roots[1],
+            seed_set_digest: ctx.seed_set_digest,
+            params_digest: ctx.params_digest,
+        };
+        if let Some(p) = self.cache.get(&key) {
+            return Resolution::Proven(p.clone());
+        }
+        // 3. Evaluate only dirty branches; fall back to a full walk if no prior state.
+        match walk_zanzibar(obs, tgt, ctx, /* dirty_only = */ self.cache.has_any_for(&key)) {
+            Some(p) => { self.cache.put(key, p.clone()); Resolution::Proven(p) }
+            None => Resolution::NoPath,
+        }
+    }
+}
+\end{lstlisting}
+
+\section{Implementation plan}
+\label{sec:plan}
+
+Each phase ships behind a differential test against the naive implementation. No phase changes consensus-visible behaviour until its oracle has run clean on the remote cluster.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{1.5cm}YL{4.6cm}@{}}
+\toprule
+\textbf{Phase} & \textbf{Deliverable} & \textbf{Acceptance test} \\
+\midrule
+P0 & Inventory: confirm what \code{WitnessDatabase}, the cuckoo filter and the view-tag scanner actually do today; write the naive full-walk resolver as the oracle & Oracle passes existing governance tests \\
+P1 & Multi-seed rank in \path{crates/consensus/src/governance/anti_sybil.rs} (single-observer today), fixed-point arithmetic for committed values & Single-seed case equals current output; diversity attenuation tested on a synthetic single-patron clique \\
+P2 & Virtual CAR Tree and atomic reconcile for sagas; pure transition function with no I/O, clock or floats; golden conformance vectors & Sequential-vs-virtual header equality, including failing sagas; vectors replay byte-identically in two host languages \\
+P3 & Observer-local conservative frustum masks and 1-byte edge tags for Zanzibar & No false negatives (property test); cull rate vs frustum size recorded \\
+P4 & Memo cache with complete keys, bounded LRU & Memoized equals recomputed after every random mutation; revocation test \\
+P5 & Deterministic two-lane scheduler & Identical checkpoints under unequal CPU budgets \\
+P6 & Delta proofs $\Delta R_k$ via proof composition & Proof size and verify time benchmarked against full-header proof \\
+P7 & Rank-mass concentration metric (share behind top-$k$ seeds) reported per epoch & Metric matches an independent recomputation on synthetic hub topologies \\
+\bottomrule
+\end{tabularx}
+\caption{Phased plan. P1 and P2 unblock the rest; P6 is the largest research risk.}
+\end{table}
+
+\section{Client runtime binding}
+\label{sec:client}
+The reconciler of \cref{sec:techniques} is the server-agnostic core of a local-first client. The normative client invariants (pure local transition function, owned versus contended events, the three-stage lifecycle, and the canonical byte boundary) are stated in the ledger paper; the reference TypeScript/WASM implementation is described in the Stack paper. The Hive adds one obligation: every resolver optimisation must be exercisable from \emph{language-neutral conformance vectors} (serialised pre-state, event, expected post-state roots and delta) so that a Rust daemon, a firmware loop or a browser client can be checked against the same fixtures.
+
+\paragraph{Hub capture.} The diversity attenuation also addresses a failure seen in payment networks that neglected search (the Lightning precedent discussed in the Radicle paper): when finding paths is costly,
+participants attach to one large hub. In the reputation graph, a node whose rank depends on a single seed ($\text{connected\_seeds}=1$) is attenuated by 10\% per iteration, which removes the \emph{reputational} reward for
+single-hub attachment and rewards disjoint paths to several independent seeds. This does not control channel topology, seed hosting or fee markets, and a participant may still choose a hub for
+convenience; it only prevents that choice from also being the cheapest way to earn rank. Hub concentration should be measured (share of rank mass behind the top-$k$ seeds) and reported each epoch.
+
+\section{Risks and non-goals}
+\label{sec:risks}
+\begin{itemize}
+  \item \textbf{Optimisation becoming authority.} The commonest failure: a cache hit or a cull treated as an authorisation. Mitigation: authority is only ever a verified proof against the current header.
+  \item \textbf{Stale reads at epoch boundaries.} Bounded at one epoch by construction; revocation uses the urgent lane.
+  \item \textbf{Non-determinism leakage.} Floating point, hash-map iteration and wall-clock slicing each break byte-identical checkpoints. Covered by the determinism oracle.
+  \item \textbf{Non-goal:} the Hive is not a new consensus protocol and does not change finality, which stays with the ledger.
+  \item \textbf{Non-goal:} frame rates. The analogy is about structure, not speed claims; none is promised.
+\end{itemize}
+
+\section{Open questions}
+\label{sec:open}
+\begin{itemize}
+  \item Is a hierarchical mask (per-tier) enough, or do large federations need a Merkleised namespace index?
+  \item Can per-slot proofs be aggregated without a trusted setup in the current proving system?
+  \item What is the right fixed-point format for rank values committed on chain, and what rounding rule preserves the Sybil-attenuation guarantees?
+  \item How should an observer with several appointed anchors weight conflicting resolutions?
+\end{itemize}
+
+\begin{thebibliography}{9}
+\bibitem{nasrulin2022meritrank} B.~Nasrulin, G.~Ishmaev, J.~Pouwelse. MeritRank: Sybil Tolerant Reputation for Merit-based Tokenomics. \emph{IEEE BRAINS}, 2022, pp.~83--90.
+\bibitem{pang2019zanzibar} R.~Pang et al. Zanzibar: Google's Consistent, Global Authorization System. \emph{USENIX ATC}, 2019, pp.~923--935.
+\bibitem{bloom1970} B.~H. Bloom. Space/time trade-offs in hash coding with allowable errors. \emph{Communications of the ACM} 13(7), 1970, pp.~422--426.
+\bibitem{fuchs1980} H.~Fuchs, Z.~M. Kedem, B.~F. Naylor. On visible surface generation by a priori tree structures. \emph{SIGGRAPH}, 1980.
+\end{thebibliography}
+
+\end{document}

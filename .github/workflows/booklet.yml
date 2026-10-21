@@ -1,0 +1,72 @@
+name: Whitebooklet Build & Attestation
+
+on:
+  push:
+    paths:
+      - 'docs/booklet/**'
+      - '.github/workflows/booklet.yml'
+    branches: [ main, block-lattice ]
+  pull_request:
+    paths:
+      - 'docs/booklet/**'
+      - '.github/workflows/booklet.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-booklet:
+    name: Compile LaTeX Whitebooklet & Sign
+    runs-on: ubuntu-latest
+    container:
+      image: texlive/texlive:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install git and make in container
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends git make ca-certificates
+
+      - name: Build PDF and Checksum
+        run: |
+          cd docs/booklet
+          make pdf-ci
+
+      - name: Upload PDF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-booklet
+          path: |
+            docs/booklet/dist/sovereign-booklet.pdf
+            docs/booklet/dist/SHA256SUMS
+          if-no-files-found: error
+
+  sign-booklet:
+    name: Cosign Keyless Attestation
+    needs: build-booklet
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download compiled booklet
+        uses: actions/download-artifact@v4
+        with:
+          name: sovereign-booklet
+          path: dist
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Keyless Sign PDF
+        run: |
+          cosign sign-blob \
+            --bundle dist/sovereign-booklet.pdf.bundle \
+            dist/sovereign-booklet.pdf
+
+      - name: Upload Signed Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-booklet-signed
+          path: dist/
