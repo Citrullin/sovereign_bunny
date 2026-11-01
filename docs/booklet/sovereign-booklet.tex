@@ -559,7 +559,15 @@ an automated Sybil attacker attempting millions of simultaneous transactions.
 
 This constitutes the legitimate function of fees in a stateless architecture:
 an anti-spam rate limiter proportional to physical resource consumption, never a
-speculative tax on state congestion. In privacy-preserving environments, we deploy
+speculative tax on state congestion or an artificial tokenomic casino. Most 2010s
+Layer~1 blockchains unthinkingly replicated the 19th-century gold-bug worldview:
+minting an arbitrary digital token governed by an artificial programmatic supply cap,
+simulating a virtual mine. Transmutation demonstrates that anchoring monetary value
+to artificial scarcity is a category error. By pricing admission directly in metered
+physical compute, perpetual storage endowments ($E = c_0 / d_{\text{eff}}$, \cref{sec:storage}),
+and rate-limiting nullifiers (RLN), the Sovereign Stack anchors value to ongoing utility
+and human engineering throughput—not to a simulated commodity that physical energy
+abundance will inevitably inflate away. In privacy-preserving environments, we deploy
 \textbf{Rate-Limiting Nullifiers (RLN)}~\cite{rln}:
 \begin{itemize}
   \item A participant stakes a small financial bond and generates an identity commitment.
@@ -570,12 +578,13 @@ reconstructs the user's private key, instantly slashing their bond.
 \end{itemize}
 
 \subsection{P5 -- Money as Accounting for Real Work}
+\label{sec:p5_money_accounting}
 
 Conventional economic dogma (Carl Menger's barter-to-commodity origin story~\cite{menger1892})
 is refuted by anthropological and credit theories of money (Alfred Mitchell-Innes~\cite{mitchellinnes1913},
-David Graeber~\cite{graeber2011}). Money is not a physical commodity; it is a socially
-enforced, double-entry ledger of mutual credits and obligations. Two historical and
-theoretical precedents directly inform our architecture:
+Georg Friedrich Knapp's state chartalism~\cite{knapp1924state}, and David Graeber~\cite{graeber2011}).
+Money is not a physical commodity; it is a socially enforced, double-entry ledger of mutual
+credits and obligations. Two historical and theoretical precedents directly inform our architecture:
 \begin{enumerate}
   \item \textbf{The Swiss WIR System (1934):} Formed by Swiss SMEs during the Great
 Depression amidst a catastrophic currency contraction, the Wirtschaftsring
@@ -591,6 +600,29 @@ when the finished output is sold and debt is retired. Joseph Schumpeter describe
 the commercial banker not as an intermediary of scarce physical coin, but as an
 allocator of endogenous purchasing power toward productive innovation~\cite{schumpeter1934}.
 \end{enumerate}
+
+\paragraph{The Sunset of Metallism: Transmutation and Energy Derivatives.}
+\label{sec:transmutation_metallism}
+Mainstream monetary theory and Austrian economics still treat physical precious metals as the ultimate non-sovereign monetary anchor, predicated on their supposed immutable geological scarcity. Transmutation itself is not fundamentally new: Glenn Seaborg and collaborators demonstrated in 1980 that relativistic heavy-ion collisions could transmute bismuth into gold~\cite{seaborg1981transmutation}, but the reaction cross-sections were vanishingly small and the energy cost rendered synthetic gold astronomically expensive.
+
+Recent developments in industrial nuclear engineering—specifically the high-energy ($14.1\,\text{MeV}$) fast-neutron flux from Deuterium-Tritium (D-T) fusion blankets driving $(n, 2n)$ threshold reactions on mercury isotopes~\cite{marathon2025fusion}—demolish the premise that scarcity is an immutable cosmological constant. In this reaction chain, fast neutrons transmute mercury-198 into metastable mercury-197, which decays spontaneously via electron capture ($t_{1/2} \approx 64.1\,\text{hours}$) into stable gold-197:
+\begin{equation}
+  {}^{198}\text{Hg}(n, 2n){}^{197}\text{Hg} \xrightarrow[\text{EC}]{t_{1/2} \approx 64.1\,\text{h}} {}^{197}\text{Au}
+  \label{eq:mercury_gold_transmutation}
+\end{equation}
+The moment element synthesis can be bred as a secondary industrial byproduct in a gigawatt-scale fusion reactor blanket alongside essential medical radioisotopes (e.g., ${}^{64}\text{Cu}$, ${}^{67}\text{Cu}$), the Mengerian commodity theory of money suffers an ontological collapse. Gold ceases to be an unbacked physical anchor forged in ancient stellar collisions and becomes a pure \textbf{energy derivative}. Its marginal production cost collapses to:
+\begin{equation}
+  \text{Cost}\bigl({}^{197}\text{Au}\bigr) = f\bigl(\text{LCOE}, \Phi_n, \sigma_{(n,2n)}, \text{CAPEX}_{\text{isotope}}\bigr)
+  \label{eq:gold_cost_function}
+\end{equation}
+Where $\text{LCOE}$ is the Levelized Cost of Electricity, $\Phi_n$ is the integrated fast-neutron flux, $\sigma_{(n,2n)}$ is the isotopic nuclear cross-section, and $\text{CAPEX}_{\text{isotope}}$ is the amortization of isotope separation infrastructure. Synthetic gold production becomes predictable, industrial, and fundamentally capped in value by baseload electric power generation.
+
+\paragraph{The Collapse of the ``Inert Physical Anchor'' and the Forcible Shift to Topology.}
+Central banks and sovereign treasuries hold physical bullion for one specific historical reason: it carries zero counterparty liability and cannot be inflated at the whim of a foreign sovereign's monetary authority. However, the moment any industrial power or energy consortium operating a commercial fusion fleet can breed physical tonnage of gold on a secondary reactor coolant loop, gold fails as an unforgeable reserve asset.
+
+Crucially, the early cryptocurrency ecosystem inherited this philosophical error. By constructing digital assets with fixed supply caps and proof-of-work ``mining'', 2010s Layer~1 blockchains merely simulated the geological extraction of precious metals in virtual software. Transmutation exposes this virtual metallism as an obsolete 19th-century mental crutch. When value cannot hide behind atomic elements or artificial digital scarcity, monetary systems have nowhere left to hide: value cannot be anchored to physical objects or their synthetic digital simulations.
+
+Instead, monetary architecture is forcibly propelled onto its true foundation: \textbf{pure relational topology}. If money is an endogenous circuit of reciprocal obligations extinguished by verified production—rather than a scarce token hoarded as a speculative talisman—the physical collapse of commodity anchors does not threaten the financial system. It validates the Sovereign Stack's core design: bilateral trust lines with bounded blast radius (\cref{sec:rwa_zkcollateral}), multilateral cyclic netting (\cref{sec:netting_engine}), and zero-knowledge state transitions against verified physical output (\cref{sec:econ}).
 
 \subsection{P6 -- The Sociology of Trust: From Alienation to ``Beep-to-Verify''}
 
@@ -2089,9 +2121,9 @@ Monetary expansion is neither inherently virtuous nor universally destructive; i
 in an economic superposition:
 \begin{itemize}
   \item \textbf{The Austerity Failure:} Rigid, programmatic deflationary supply caps
-(e.g., Bitcoin's hard 21-million limit, post-2008 Basel III/IV capital charges)
+(e.g., Bitcoin's hard 21-million limit, fixed UTXO halving schedules, post-2008 Basel III/IV capital charges)
 starve real-world industrial innovation. Constrained liquidity forces capital into
-unproductive speculative hoarding, leaving viable physical production unfunded.
+unproductive speculative hoarding, leaving viable physical production unfunded. Just as industrial nuclear transmutation shatters the geological scarcity of physical gold (\cref{sec:transmutation_metallism}), artificial digital scarcity models are exposed as a simulation of an obsolete 19th-century metallist dogma.
   \item \textbf{The Inflationary Failure:} Unbacked fiat or token printing generates
 severe Cantillon dilution, misallocating capital toward extractive corporate
 slop and speculative bubbles.
@@ -2140,7 +2172,7 @@ as equal to, or even more valuable than, actual present industrial cash flows.
 
 This created an economic system addicted to \textbf{paper wealth over physical industry}:
 \begin{itemize}
-  \item \textbf{Extractive Corporate Slop:} Venture capital subsidized loss-making software monopolies to conquer markets, later turning into extractive corporate "enshittification" once capital costs normalized.
+  \item \textbf{Extractive Corporate Slop:} Venture capital subsidized loss-making software monopolies to conquer markets, later turning into extractive corporate ``enshittification'' once capital costs normalized.
   \item \textbf{Infinite Token Dilution:} Crypto projects raised billions on speculative governance tokens backed by zero physical production, zero revenue, and zero real-world cash flows.
 \end{itemize}
 
@@ -2154,6 +2186,15 @@ cash flows are dead in the water. Sovereign Bunny cleans up this distortion:
 
 \paragraph{Reconciling the ZIRP Critique with Endogenous MMT Velotility.}
 It is essential to clarify the theoretical harmony between our critique of ZIRP and our adoption of Modern Monetary Theory (MMT), monetary circuit mechanics, and neoclassical growth theory ($Q(V)$ in \cref{eq:velotility}). Our critique of ZIRP targets speculative central-bank asset purchases (quantitative easing) that subsidize financialized paper monopolies without demanding real-economy returns. Conversely, our adoption of MMT and circuit theory is strictly Schumpeterian~\cite{schumpeter1934}, Grazianian~\cite{graziani2003}, and Solovian~\cite{solow1956}: endogenous credit creation is legitimate when, and only when, it is bound mathematically to verified industrial output ($Q$) and retired through real clearing cycles. Credit that does not clear against physical output is parasitic; credit that finances verified engineering throughput is the lifeblood of collaborative acceleration. By rooting monetary expansion in the Solow--Cobb--Douglas production function~\cite{cobbdouglas1928}, we ensure that capital deepening is governed by diminishing marginal returns and physical clearing, rather than arbitrary fiat dilution.
+
+\paragraph{The Demise of the ``Digital Gold'' Moat and Alignment with Industrial Sovereignty.}
+Bitcoin maximalists routinely argue that fixed-supply crypto-assets are superior to fiat currency because they mimic the geological scarcity of gold without physical weight or transport friction. However, industrial fusion transmutation proves that geological scarcity was never an immutable cosmological truth; digital tokens mimicking gold are clinging to a defunct 19th-century commodity fiction. When value cannot hide behind atomic elements or arbitrary programmatic supply caps, value must be defined relationally through verifiable clearing networks:
+\begin{itemize}[nosep]
+  \item \textbf{Bilateral trust lines with bounded blast radius} committed to CAR Slot~1 and Slot~2 (\cref{sec:rwa_zkcollateral}).
+  \item \textbf{Multilateral clearing and netting cycles} that extinguish $70$--$85\%$ of gross obligations endogenously (\cref{sec:netting_engine}).
+  \item \textbf{Zero-knowledge state transitions} anchored directly in verified industrial production invoices, CNC machining telemetry, and energy meters (CAR Slot~4).
+\end{itemize}
+European industrial policy (such as the Cyber Resilience Act, NIS2, and clean energy mandates) cannot afford to anchor digital infrastructure to speculative, volatile commodity tokens or synthetic digital gold. Grounding the monetary unit of account in real metered physical compute, perpetual storage endowments, and bilateral clearing positions the Sovereign Stack as the only monetary and ledger architecture structurally resilient to the post-scarcity energy economics of fusion-driven transmutation.
 
 \subsection{Real World Assets (RWA), Basel III/IV Compression, and zkCollateral}
 \label{sec:rwa_zkcollateral}
