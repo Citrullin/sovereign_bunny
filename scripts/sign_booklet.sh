@@ -17,7 +17,7 @@ CHECKSUM_FILE="$DIST_DIR/SHA256SUMS"
 
 if [ ! -f "$PDF_FILE" ]; then
     echo "Error: PDF file not found at $PDF_FILE" >&2
-    echo "Run scripts/build_booklet_remote.sh or make -C docs/booklet pdf first." >&2
+    echo "Build the booklet on \$REMOTE_HOST (make -C docs/booklet pdf) and sync to docs/booklet/dist/ first." >&2
     exit 1
 fi
 

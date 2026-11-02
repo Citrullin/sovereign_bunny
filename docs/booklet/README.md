@@ -22,7 +22,7 @@ Depending on whether you are compiling on `$REMOTE_HOST` or inspecting locally:
   - TeX Live packages: `texlive-latex-extra`, `texlive-science`, `texlive-fonts-extra`, `lmodern`
   - Containerized fallback: Docker (`texlive/texlive:latest`) if native TeX Live is absent.
 - **Local Developer Workstation**:
-  - `rsync`, `ssh`, `sha256sum` (used by `scripts/build_booklet_remote.sh`)
+  - `rsync`, `ssh`, `sha256sum` (for syncing source and artifacts to/from `$REMOTE_HOST`)
   - `poppler-utils` (`pdftoppm`): Required for rendering PDF pages to high-resolution PNGs during visual layout verification and local review (`sudo apt install poppler-utils`).
   - `cosign`, `minisign`, or `gpg`: Required for cryptographic signing of release bundles.
 
@@ -33,16 +33,25 @@ Depending on whether you are compiling on `$REMOTE_HOST` or inspecting locally:
 > [!IMPORTANT]
 > **Workspace Build Rule (`GEMINI.md`)**: Local compilation of TeX/Rust is strictly disabled on developer machines. All compilation must be executed on the remote target host (`$REMOTE_HOST`) or via remote container pipelines.
 
-### Option 1: Automated Remote Build (Recommended)
+### Option 1: Remote Sync & Build via SSH
 
-Ensure `REMOTE_HOST` is exported in your environment or configured in `scripts/cluster.env`:
+Sync `docs/booklet/` to your configured `$REMOTE_HOST` and invoke the build target remotely:
 
 ```bash
 export REMOTE_HOST=root@your-remote-host
-./scripts/build_booklet_remote.sh
+export REMOTE_DIR=/root/sovereign-reth
+
+# Sync sources to remote
+rsync -avzP docs/booklet/ "$REMOTE_HOST:$REMOTE_DIR/docs/booklet/"
+
+# Execute build on remote target
+ssh "$REMOTE_HOST" "cd $REMOTE_DIR/docs/booklet && make pdf-ci"
+
+# Retrieve compiled PDF and integrity sums
+rsync -avzP "$REMOTE_HOST:$REMOTE_DIR/docs/booklet/dist/" docs/booklet/dist/
 ```
 
-This script:
+This workflow:
 1. Syncs `docs/booklet/` to `$REMOTE_HOST:$REMOTE_DIR/docs/booklet/`
 2. Executes `make pdf-ci` on the remote target
 3. Pulls `sovereign-booklet.pdf`, component papers, and `SHA256SUMS` into `docs/booklet/dist/`

@@ -2,7 +2,7 @@
 #  Makefile -- Reproducible build pipeline for "Friction by Design" booklet
 #
 #  NOTE: Per project policy, local builds are disabled. Execute on $REMOTE_HOST
-#        via scripts/build_booklet_remote.sh or containerized CI.
+#        via SSH or containerized CI.
 # ============================================================================
 
 BUILD_DIR ?= build
