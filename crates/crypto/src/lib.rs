@@ -6,9 +6,9 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-pub mod toy_mode;
-
 use serde::{Deserialize, Serialize};
+
+pub mod sbom_parser;
 
 /// Signature and verification algorithms supported across profiles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
