@@ -4,7 +4,7 @@
 % ============================================================================
 \documentclass[a4paper,11pt,twoside,parskip=half-,headings=small]{scrartcl}
 \input{common-preamble.tex}
-\hypersetup{pdftitle={Sovereign Bunny: The Stateless Account-Lattice},pdfauthor={Sovereign Bunny contributors},pdfsubject={Actors, the 64-slot Compact Account Register, epoch consensus},pdfkeywords={sovereign bunny, account-lattice, car, zanzibar, blind notes, snow, paxos}}
+\hypersetup{pdftitle={Sovereign Bunny: The Stateless Account-Lattice},pdfauthor={Sovereign Bunny contributors},pdfsubject={Actors, the 64-slot Chained Account Register, epoch consensus},pdfkeywords={sovereign bunny, account-lattice, car, zanzibar, blind notes, snow, paxos}}
 \setpaperheads{Sovereign Bunny: The Stateless Account-Lattice}{Sovereign Bunny paper set -- Ledger}
 
 \begin{document}
@@ -16,7 +16,7 @@
   {\color{ink}\Huge\bfseries Sovereign Bunny\par}\vspace{0.4cm}
   {\color{accent}\Large The Stateless Account-Lattice\par}
   \vspace{0.8cm}
-  {\large The simple one: one primitive, the Actor, with a 64-slot Compact Account Register\par}
+  {\large The simple one: one primitive, the Actor, with a 64-slot Chained Account Register\par}
   \vfill
   \begin{tabular}{rl}
     \textbf{Status}   & Skeleton -- content still lives in the whitebooklet\\
@@ -30,7 +30,7 @@
 \section{Purpose and design rule}
 This paper is the normative description of the \emph{ledger only}. Its design rule is deliberately small:
 \begin{keybox}{One primitive}
-There is exactly one kind of participant, the \textbf{Actor}: a single-writer, append-only micro-chain carrying a 64-slot Compact Account Register (CAR).
+There is exactly one kind of participant, the \textbf{Actor}: a single-writer, append-only micro-chain carrying a 64-slot Chained Account Register (CAR).
 Persons, devices, terminals, DAOs, banks and states are all Actors. Anything institutional is a \emph{configuration} of Actors expressed through slots, never a new account type.
 \end{keybox}
 Institutional behaviour (multi-seed reputation, elections, audit, macro control) is out of scope and belongs to the Hive paper; packaging and deployment belong to the Stack paper;
