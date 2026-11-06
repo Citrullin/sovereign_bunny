@@ -109,6 +109,13 @@ contract ShadowERC721 is WitnessVerifier, LatticePrecompiles {
         uint256 epoch
     ) public {
         require(_owners[tokenId] == address(0), "Token already bridged in");
+        require(recipient != address(0), "Invalid recipient");
+
+        // C-11: Validate leaf derivation against target address, chain ID, tokenId, and recipient
+        bytes32 expectedLeafHash = keccak256(
+            abi.encodePacked(block.chainid, address(this), tokenId, recipient, epoch)
+        );
+        require(bytes32(leaf_g1[0]) == expectedLeafHash, "Invalid state leaf binding");
 
         // Verify pairing e(pi, g2) == e(leaf, r_stateless)
         bool verified = verifyPairing(pi_g1, leaf_g1, g2_point, r_stateless);
@@ -143,7 +150,7 @@ contract ShadowERC721 is WitnessVerifier, LatticePrecompiles {
         bridgeStates[tokenId].active = false;
 
         emit Transfer(owner, address(0), tokenId);
-        emit BridgedBack(tokenId, bridgeStates[tokenId].originalOwner);
+        emit BridgedBack(tokenId, msg.sender);
     }
 
     /**

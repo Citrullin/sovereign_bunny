@@ -37,6 +37,9 @@ contract SimplePaymaster {
         postOpReverted
     }
 
+    event Deposited(address indexed sender, uint256 amount);
+    event Withdrawn(address indexed to, uint256 amount);
+
     modifier onlyEntryPoint() {
         require(msg.sender == entryPoint, "Paymaster: caller must be EntryPoint");
         _;
@@ -51,6 +54,22 @@ contract SimplePaymaster {
         require(_entryPoint != address(0), "Invalid EntryPoint");
         entryPoint = _entryPoint;
         owner = msg.sender;
+    }
+
+    /// @notice Adds deposit to the EntryPoint contract for this paymaster (M-3).
+    function depositToEntryPoint() external payable onlyOwner {
+        (bool success, ) = entryPoint.call{value: msg.value}(abi.encodeWithSignature("depositTo(address)", address(this)));
+        require(success, "Deposit to EntryPoint failed");
+        emit Deposited(msg.sender, msg.value);
+    }
+
+    /// @notice Withdraws deposit from the EntryPoint contract (M-3).
+    function withdrawFromEntryPoint(address payable withdrawAddress, uint256 amount) external onlyOwner {
+        (bool success, ) = entryPoint.call(
+            abi.encodeWithSignature("withdrawTo(address,uint256)", withdrawAddress, amount)
+        );
+        require(success, "Withdraw from EntryPoint failed");
+        emit Withdrawn(withdrawAddress, amount);
     }
 
     function setAllowance(address sender, uint256 allowance) external onlyOwner {

@@ -17,7 +17,7 @@ contract LatticePrecompiles {
     address public constant PRECOMPILE_STORAGE_DA      = address(0x0000000000000000000000000000000000000053);
     address public constant PRECOMPILE_SIGNAL_REGISTRY = address(0x0000000000000000000000000000000000000054);
     address public constant PRECOMPILE_ZANZIBAR_REBAC  = address(0x0000000000000000000000000000000000000061);
-    address public constant PRECOMPILE_CMS_ACTPUB      = address(0x00000000000000000000000000000000000000F1);
+    address public constant PRECOMPILE_CMS_ACTPUB      = address(0x00000000000000000000000000000000000000f1);
     address public constant PRECOMPILE_LATTICE_HEIGHT  = address(0x0000000000000000000000000000000000000100);
 
     /// @notice Queries the local block sequence number (Account Height) of the target address

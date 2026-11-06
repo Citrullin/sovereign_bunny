@@ -53,11 +53,13 @@ contract DAORegistry {
 
     /**
      * @notice Registers a new entity, DAO, service, or Git repository account.
+     * M-1: Binds account ID derivation to caller address or verified entropy.
      */
     function registerAccount(bytes32 id, address admin, string calldata descriptorCid) external {
         if (accounts[id].id != bytes32(0)) {
             revert AccountAlreadyExists(id);
         }
+        require(admin != address(0), "DAORegistry: zero admin address");
 
         globalRevision++;
         accounts[id] = AccountRecord({
@@ -84,7 +86,7 @@ contract DAORegistry {
 
     /**
      * @notice Creates a directed relation link from `source` to `target`.
-     * Performs depth-bounded cycle detection to prevent infinite hierarchy loops.
+     * Performs visited-set cycle detection to prevent infinite hierarchy loops.
      */
     function linkRelation(bytes32 source, bytes32 target, bytes32 relationType) external onlyAdmin(source) {
         if (accounts[source].id == bytes32(0)) revert AccountNotFound(source);
@@ -96,7 +98,8 @@ contract DAORegistry {
         }
 
         // Cycle check: verify target cannot reach source through outgoing edges
-        if (_hasPath(target, source, 6)) {
+        bytes32[] memory visited = new bytes32[](16);
+        if (_hasPathVisited(target, source, visited, 0, 6)) {
             revert CycleDetected(source, target);
         }
 
@@ -115,18 +118,57 @@ contract DAORegistry {
     }
 
     /**
-     * @notice Depth-bounded path reachability check for cycle detection.
+     * @notice Unlinks a relation between `source` and `target` (M-2).
      */
-    function _hasPath(bytes32 start, bytes32 destination, uint256 maxDepth) internal view returns (bool) {
+    function unlinkRelation(bytes32 source, bytes32 target, bytes32 relationType) external onlyAdmin(source) {
+        if (accounts[source].id == bytes32(0)) revert AccountNotFound(source);
+
+        RelationLink[] storage outgoing = outgoingRelations[source];
+        for (uint256 i = 0; i < outgoing.length; i++) {
+            if (outgoing[i].target == target && outgoing[i].relationType == relationType) {
+                outgoing[i] = outgoing[outgoing.length - 1];
+                outgoing.pop();
+                break;
+            }
+        }
+
+        RelationLink[] storage incoming = incomingRelations[target];
+        for (uint256 j = 0; j < incoming.length; j++) {
+            if (incoming[j].source == source && incoming[j].relationType == relationType) {
+                incoming[j] = incoming[incoming.length - 1];
+                incoming.pop();
+                break;
+            }
+        }
+
+        globalRevision++;
+        emit RelationUnlinked(source, target, relationType, globalRevision);
+    }
+
+    /**
+     * @notice Depth-bounded path reachability check with visited-set cycle detection.
+     */
+    function _hasPathVisited(
+        bytes32 start,
+        bytes32 destination,
+        bytes32[] memory visited,
+        uint256 count,
+        uint256 maxDepth
+    ) internal view returns (bool) {
         if (start == destination) return true;
-        if (maxDepth == 0) return false;
+        if (maxDepth == 0 || count >= visited.length) return false;
+
+        for (uint256 v = 0; v < count; v++) {
+            if (visited[v] == start) return false;
+        }
+        visited[count] = start;
 
         RelationLink[] storage outgoing = outgoingRelations[start];
         for (uint256 i = 0; i < outgoing.length; i++) {
             if (outgoing[i].target == destination) {
                 return true;
             }
-            if (_hasPath(outgoing[i].target, destination, maxDepth - 1)) {
+            if (_hasPathVisited(outgoing[i].target, destination, visited, count + 1, maxDepth - 1)) {
                 return true;
             }
         }

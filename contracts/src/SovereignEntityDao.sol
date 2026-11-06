@@ -28,8 +28,12 @@ contract SovereignEntityDao {
     // Relational table state root anchored in CAR Slot 7
     bytes32 public latestSqlStateRoot;
 
+    // Mapping of registered verification keys for approved SQL schemas
+    mapping(bytes32 => bool) public approvedTableVks;
+
     event MemberAdded(address indexed member, bytes32 indexed daoId);
     event MemberRemoved(address indexed member, bytes32 indexed daoId);
+    event TableVkRegistered(bytes32 indexed tableVk);
     event DaoSqlExecuted(
         address indexed caller,
         string sqlQuery,
@@ -42,6 +46,7 @@ contract SovereignEntityDao {
     error MemberNotFound(address member);
     error SqlExecutionFailed(string reason);
     error InvalidZkProof();
+    error TableVkNotApproved(bytes32 tableVk);
 
     modifier onlyAdmin() {
         if (msg.sender != admin) {
@@ -68,6 +73,11 @@ contract SovereignEntityDao {
 
         memberList.push(msg.sender);
         isTrackedMember[msg.sender] = true;
+    }
+
+    function registerTableVk(bytes32 tableVk) external onlyAdmin {
+        approvedTableVks[tableVk] = true;
+        emit TableVkRegistered(tableVk);
     }
 
     /**
@@ -106,9 +116,15 @@ contract SovereignEntityDao {
         string calldata sqlQuery,
         bytes calldata zkProof
     ) external onlyMember returns (bytes32 newRoot) {
-        // 1. Verify zkProof non-emptiness / validity
-        if (zkProof.length == 0) {
+        // 1. Verify zkProof non-emptiness and minimum proof length
+        if (zkProof.length < 32) {
             revert InvalidZkProof();
+        }
+
+        // C-14: If proof carries a 32-byte table VK prefix, verify against registered approved VKs
+        bytes32 tableVk = bytes32(zkProof[:32]);
+        if (!approvedTableVks[tableVk]) {
+            revert TableVkNotApproved(tableVk);
         }
 
         // 2. Dispatch to Sovereign SQL Engine (Precompile 0x55)

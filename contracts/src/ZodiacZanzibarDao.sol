@@ -133,9 +133,18 @@ contract ZodiacZanzibarDao {
             return false;
         }
 
-        // Step through each witness link verifying each step via Zanzibar RAM check
+        // Step through each witness link verifying each step via Zanzibar RAM check and transitive chaining
         for (uint256 i = 0; i < witnessPath.length; i++) {
             RelationWitness calldata step = witnessPath[i];
+
+            // C-5: Enforce transitive hop chaining: object of previous step must match subject of current step
+            if (i > 0) {
+                address prevObjectAsAddr = address(uint160(uint256(witnessPath[i - 1].objectId)));
+                if (step.subject != prevObjectAsAddr) {
+                    return false;
+                }
+            }
+
             (bool success, bytes memory result) = PRECOMPILE_ZANZIBAR.staticcall(
                 abi.encodeWithSignature(
                     "check(uint16,bytes32,uint16,address)",
