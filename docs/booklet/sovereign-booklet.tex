@@ -341,7 +341,7 @@ To prevent monolithic coupling and enable independent verification across hardwa
 \begin{itemize}[nosep]
   \item \textbf{Core Ledger and Portable Runtime:} \code{sovereign-reth}, \code{sovereign-ledger-lib}, and \code{types-ts} (Rust consensus engine, 64-slot Chained Account Register (CAR) state machine, portable \code{no\_std} core library, and SSZ schemas).
   \item \textbf{Relational Proving and Institutional Scene-Graph:} \code{iceberg-prover-system} and \code{bunny-hive} (Apache Iceberg and Parquet Proof of SQL engine with Noir join circuits, alongside the 3D scene-graph resolver).
-  \item \textbf{Autonomous Cognition and Tooling:} \code{sovereign-heres}, \path{sovereign-remix-plugin}, and \path{sovereign-test-cases} (cognitive agent swarm, Remix IDE 64-slot CAR cockpit, and 12-suite BDD epistemology engine).
+  \item \textbf{Autonomous Cognition and Developer Tooling:} \code{sovereign-heres}, \path{sovereign-remix-plugin}, and \path{sovereign-test-cases} (cognitive agent swarm, Remix IDE 64-slot CAR cockpit, and 12-suite BDD epistemology engine).
   \item \textbf{Client Wallets and Physical Carriers:} \code{sovereign-wallet}, \code{Rabbit-Wallet}, \code{rabbit-mobile-wallet}, and \path{ZX10_smart_watch_reverse_engineering} (browser wallet, CAIP extension, mobile app, and RIOT OS smartwatch firmware).
 \end{itemize}
 
@@ -1398,8 +1398,8 @@ The Sovereign architecture eliminates this bottleneck completely in the dedicate
 \centering
 \resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
-  storebox/.style={draw=ink, rounded corners=3pt, fill=codebg, line width=0.8pt, font=\fontsize{6.5pt}{8pt}\selectfont, align=center, inner sep=5pt, text width=4.2cm},
-  latbox/.style={draw=accent, rounded corners=3pt, fill=accent!8, line width=0.9pt, font=\fontsize{6.5pt}{8pt}\selectfont, align=center, inner sep=5pt, text width=4.0cm},
+  storebox/.style={draw=ink, rounded corners=3pt, fill=codebg, line width=0.8pt, font=\scriptsize, align=center, inner sep=6pt, text width=3.8cm},
+  latbox/.style={draw=accent, rounded corners=3pt, fill=accent!8, line width=0.9pt, font=\scriptsize, align=center, inner sep=6pt, text width=4.0cm},
   zkbox/.style={draw=ink, rounded corners=3pt, fill=accent!14, line width=0.95pt, font=\fontsize{6pt}{8pt}\selectfont, align=left, inner sep=7pt, text width=6.2cm},
   arrow/.style={-{Stealth[length=2.3mm]}, line width=0.85pt, draw=ink},
   rebacarrow/.style={{Stealth[length=2.3mm]}-{Stealth[length=2.3mm]}, line width=0.95pt, draw=accent, dashed}

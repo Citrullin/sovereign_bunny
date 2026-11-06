@@ -62,8 +62,8 @@ The codebase adapts cryptographic profiles via `crates/crypto/src/lib.rs` to cle
 
 ---
 
-## 5. Security Invariant: SGX Consensus & Toy Mode Boundary
+## 5. Security Invariant: Hardware TEE Consensus & Zero-Mock Production Boundary
 
 As demonstrated by security findings:
 1. **Network Consensus Over Enclave Output**: A single node's SGX attestation must never be trusted unilaterally for state progression; quorum consensus (Snowman/Avalanche BFT) across the validator committee operates over the attested state roots.
-2. **Hardware Protection**: `--toy-mode` (which activates mock SGX via `SOVEREIGN_MOCK_SGX=1`) strictly prohibits activation on machines exposing `/dev/attestation` or `/dev/sgx/enclave`, preventing production validators from inadvertently disabling enclave isolation.
+2. **Hardware Protection & Strict Attestation**: Synthetic mock SGX and toy-mode cryptographic downgrades are completely eradicated from the production runtime. SGX attestation requires valid DCAP quotes (verified via `dcap_qvl` and `DcapVerifier`) with explicit non-debug verification, binding the node wallet into authenticated `report_data`.

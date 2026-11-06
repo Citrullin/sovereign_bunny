@@ -5,10 +5,10 @@ Sovereign Bunny compiles into a single high-performance binary (`bunny`) capable
 
 ---
 
-## ⚠️ Toy Mode Notice
+## Production Security & Determinism
 
-> [!WARNING]
-> When running with `--toy-mode`, cryptographic parameters (Groth16 curve dimensions, Snow beta finalization rounds, Raft election timeouts) are deliberately downgraded for rapid local development and testing. **Proofs and attestations generated in Toy Mode provide NO cryptographic security and must NOT be used in production or for real assets.**
+> [!IMPORTANT]
+> Sovereign Bunny operates with **zero synthetic mock fallbacks and zero toy-mode cryptographic downgrades**. Through our 64-slot Chained Account Register (CAR) random-access ROM indexing and Level 2 bounded lookups (LogUp/cq over local ReBAC and relational state), proving executes with minimal constraint depth directly on commodity hardware while maintaining full production-grade security (BN254 curve, FIPS-204 ML-DSA-65, strict Intel SGX DCAP attestation, and Snowball $\beta=15$).
 
 ---
 
@@ -35,7 +35,7 @@ Sovereign Bunny compiles into a single high-performance binary (`bunny`) capable
 - **Zero-Honeypot Composability:** External chains are mapped to low-entropy virtual addresses (e.g. `0x00...00_01_00000001` for Ethereum Mainnet).
 - **Superposition & Nullifier Lifecycle:** Assets locked on source clusters enter `ActiveSuperposition`; destination terminal burns consume nullifiers and release native assets directly into account-lattice accounts.
 
-### 6. Content Addressable Register (CAR) 64-Slot Lattice
+### 6. Chained Account Register (CAR) 64-Slot Lattice
 - **Polymorphic Account Space:** Accounts maintain 64 typed content slots (`Slot 0`: DID Identity, `Slot 1`: Zanzibar ReBAC, `Slot 2`: Native Payment / Notes, `Slot 3`: Git DAG tip, `Slot 4`: SQL Digest, `Slot 5`: X-Road descriptor, `Slot 6`: Interface contract, `Slot 7`: Merit rank vector, `Slots 8–63`: Dynamic apps).
 - **Hierarchical Addressing:** Deterministic derivation of child accounts and named slot sub-addresses without contract deployment overhead.
 
