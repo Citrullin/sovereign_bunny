@@ -40,15 +40,19 @@ impl AttestationProvider for SgxAttestationProvider {
             return Err("Invalid or empty SGX quote payload".to_string());
         }
 
-        // Fallback for mock quotes strictly in test mode
-        if quote.starts_with(b"MOCK_SGX_QUOTE_") {
-            #[cfg(test)]
-            return Ok(true);
-            #[cfg(not(test))]
-            return Err("Mock SGX quote received: strictly rejected in production builds.".to_string());
+        if quote.len() < 432 {
+            return Err("SGX quote payload too short for DCAP quote (minimum 432 bytes)".to_string());
         }
 
-        // Parse and decode the quote using scale codec to verify its structure
+        // Parse and decode the quote using dcap parser or scale codec to verify its structure
+        let dcap_verifier = crate::dcap::DcapVerifier;
+        if let Ok(report) = dcap_verifier.parse_raw_quote(quote) {
+            if report.is_debug {
+                return Err("REJECT: SGX enclave running with DEBUG flag enabled".to_string());
+            }
+            return Ok(true);
+        }
+
         let parsed = dcap_qvl::quote::Quote::decode(&mut &quote[..])
             .map_err(|e| format!("Failed to parse SGX quote: {e}"))?;
 

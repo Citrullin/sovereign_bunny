@@ -121,15 +121,21 @@ pub struct ShadowBurnReceipt {
 }
 
 impl ShadowBurnReceipt {
-    /// Computes the deterministic leaf commitment hash of this burn receipt for Merkle root inclusion.
+    /// Computes the deterministic leaf commitment hash of this burn receipt for Merkle root inclusion (C-12).
     pub fn commitment_hash(&self) -> B256 {
-        let mut preimage = Vec::with_capacity(32 + 32 + 4 + 4 + 20 + 8);
+        let mut preimage = Vec::with_capacity(32 + 32 + 4 + 4 + 20 + 8 + 32);
         preimage.extend_from_slice(self.receipt_id.as_slice());
         preimage.extend_from_slice(self.nullifier.as_slice());
         preimage.extend_from_slice(&self.source_chain_id.to_be_bytes());
         preimage.extend_from_slice(&self.dest_chain_id.to_be_bytes());
         preimage.extend_from_slice(self.beneficiary.as_slice());
         preimage.extend_from_slice(&self.burn_epoch.to_be_bytes());
+        
+        // Bind burned_asset descriptor cryptographically (C-12)
+        let asset_json = serde_json::to_vec(&self.burned_asset).unwrap_or_default();
+        let asset_hash = alloy_primitives::keccak256(&asset_json);
+        preimage.extend_from_slice(asset_hash.as_slice());
+
         alloy_primitives::keccak256(&preimage)
     }
 }

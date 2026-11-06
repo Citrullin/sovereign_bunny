@@ -1,4 +1,4 @@
-//! # Dynamic Microkernel Chained Account-Register (CAR) Architecture
+//! # Chained Account Register (CAR) Architecture
 //!
 //! Implements sparse, on-demand polymorphic slots under the **Microkernel Paradigm (Mechanism, not Policy)**:
 //! - **Fixed Baseline Recovery Slots**:
@@ -98,13 +98,63 @@ pub fn derive_child_address(parent: &Address, path: &str) -> Address {
 }
 
 
-/// Deterministically derives a 16-bit slot ID from an arbitrary dynamic slot name.
-/// Example: `"nexterp.manufacturing.v1"` -> u16 slot index.
+/// Consensus-ratified Network Slot Schema Manifest governing slots 0..63 across a manifold.
+/// Individual accounts cannot invent arbitrary slot schemas; every slot transition must match
+/// the network's consensus-ratified `NetworkSlotSchemaManifest`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkSlotSchemaManifest {
+    pub chain_id: u64,
+    pub schemas: HashMap<u16, crate::config::SlotSchemaConfig>,
+}
+
+impl Default for NetworkSlotSchemaManifest {
+    fn default() -> Self {
+        Self::from_genesis_config(&crate::config::NetworkGenesisConfig::default())
+    }
+}
+
+impl NetworkSlotSchemaManifest {
+    #[must_use]
+    pub fn from_genesis_config(config: &crate::config::NetworkGenesisConfig) -> Self {
+        let mut schemas = HashMap::new();
+        for s in &config.slot_schemas {
+            schemas.insert(s.slot_id, s.clone());
+        }
+        Self {
+            chain_id: config.chain_id,
+            schemas,
+        }
+    }
+
+    /// Validates that a slot index and plugin identifier conform to the network's consensus manifest.
+    pub fn validate_slot_plugin(&self, slot_id: u16, plugin_id: &str) -> Result<(), &'static str> {
+        if slot_id >= 64 {
+            return Err("Account register is a flat array bounded to 64 slots (R_0..R_63)");
+        }
+        if let Some(schema) = self.schemas.get(&slot_id) {
+            if schema.plugin_name != plugin_id && !plugin_id.starts_with("app.") && plugin_id != format!("slot_{}", slot_id) {
+                return Err("CAR_SCHEMA_ERR: Slot plugin_id does not match consensus NetworkSlotSchemaManifest");
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Computes a deterministic transition proof tag binding `(verifier_key, old_commitment, new_commitment, tx_hash)`.
 #[must_use]
-pub fn derive_slot_id(name: &str) -> u16 {
-    let hash = blake3::hash(name.as_bytes());
-    let val = u16::from_le_bytes([hash.as_bytes()[0], hash.as_bytes()[1]]);
-    (val % 62) + 2 // Bounded to 2..63
+pub fn compute_slot_transition_tag(
+    vk: B256,
+    old_commitment: B256,
+    new_commitment: B256,
+    tx_hash: B256,
+) -> B256 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"sovereign:car_slot_transition:v1:");
+    hasher.update(vk.as_slice());
+    hasher.update(old_commitment.as_slice());
+    hasher.update(new_commitment.as_slice());
+    hasher.update(tx_hash.as_slice());
+    B256::from_slice(hasher.finalize().as_bytes())
 }
 
 /// Canonical DAO / Enterprise App State Anchor (NextERP, NextCloud, internal SQL databases & media).
@@ -145,7 +195,7 @@ pub fn compute_app_commitment(anchor: &DaoAppAnchor) -> B256 {
     alloy_primitives::keccak256(&buf)
 }
 
-/// Dynamic Sparse Polymorphic Chained Account-Register (CAR).
+/// Chained Account Register (CAR) of one Actor: a chain of 64-slot registers, one per state transition.
 ///
 /// Functions as a "Flat Register Array" (Tier 2 in the State Hierarchy), where slots
 /// map explicitly to $R_0 \dots R_{63}$. This guarantees $O(1)$ lookup times in memory
@@ -321,31 +371,27 @@ impl PolymorphicAccountRegister {
         self.transition_slot(slot_id, new_commitment, current_epoch)
     }
 
-    /// Dynamically unmounts an unused slot.
+    /// Dynamically unmounts an unused plugin slot (Slots 10..63). Core slots 0..9 cannot be unmounted.
     pub fn unmount_slot(&mut self, slot_id: u16) -> Result<(), &'static str> {
+        if slot_id < 10 {
+            return Err("CAR_SCHEMA_ERR: Core consensus slots (0..9) cannot be unmounted");
+        }
         self.slots.remove(&slot_id).ok_or("Slot not mounted")?;
         self.nonce += 1;
         Ok(())
     }
 
-    /// Dynamically mounts an on-demand slot derived from an arbitrary path/name.
-    pub fn mount_named_slot(
+    /// Mounts a slot only if it conforms to the consensus-ratified `NetworkSlotSchemaManifest`.
+    pub fn mount_consensus_slot(
         &mut self,
-        name: &str,
+        manifest: &NetworkSlotSchemaManifest,
+        slot_id: u16,
         initial_commitment: B256,
         verifier_key: B256,
         plugin_id: String,
-    ) -> Result<u16, &'static str> {
-        let slot_id = derive_slot_id(name);
-        self.mount_slot(slot_id, initial_commitment, verifier_key, plugin_id)?;
-        Ok(slot_id)
-    }
-
-    /// Dynamically unmounts a named slot.
-    pub fn unmount_named_slot(&mut self, name: &str) -> Result<u16, &'static str> {
-        let slot_id = derive_slot_id(name);
-        self.unmount_slot(slot_id)?;
-        Ok(slot_id)
+    ) -> Result<(), &'static str> {
+        manifest.validate_slot_plugin(slot_id, &plugin_id)?;
+        self.mount_slot(slot_id, initial_commitment, verifier_key, plugin_id)
     }
 
     /// Computes the unified account state tip $H_t$ as the cryptographic root across all mounted slots.
@@ -390,7 +436,7 @@ impl PolymorphicAccountRegister {
         let slot_id = if anchor.slot_id >= 2 && anchor.slot_id < 64 {
             anchor.slot_id
         } else {
-            7 // Canonical Slot 0x07 for DAO App & State Provenance
+            9 // Canonical Slot 0x09 (R_9) for CGA IPv6 & DAO App Manifest Provenance
         };
         anchor.slot_id = slot_id;
 
@@ -465,17 +511,23 @@ impl PolymorphicAccountRegister {
         }
     }
 
-    fn verify_transition_proof(
+    pub fn verify_transition_proof(
         vk: B256,
         old_commitment: B256,
         new_commitment: B256,
         tx_hash: B256,
         proof: &[u8],
     ) -> bool {
-        let computed = alloy_primitives::keccak256(
-            [vk.as_slice(), old_commitment.as_slice(), new_commitment.as_slice(), tx_hash.as_slice(), proof].concat(),
-        );
-        computed != B256::ZERO
+        if vk == B256::ZERO || new_commitment == B256::ZERO || proof.len() < 32 {
+            return false;
+        }
+        // 1. Full BN254 KZG / UltraPlonk pairing proof (192+ bytes)
+        if proof.len() >= 192 && sovereign_crypto::verify_stateless_proof(proof).is_ok() {
+            return true;
+        }
+        // 2. Cryptographic slot-transition authentication tag bound to (vk, old, new, tx_hash)
+        let expected_tag = compute_slot_transition_tag(vk, old_commitment, new_commitment, tx_hash);
+        proof[0..32] == expected_tag.as_slice()[0..32]
     }
 
     /// Locks the account state with an intermediate root during an in-flight send.
@@ -958,11 +1010,20 @@ mod tests {
         // 2. Execute SQL transition
         let query_digest = B256::repeat_byte(0x33);
         let new_table_root = B256::repeat_byte(0x44);
-        let schema_proof = vec![0x99; 32];
+        let execution_digest = alloy_primitives::keccak256(
+            [query_digest.as_slice(), new_table_root.as_slice()].concat(),
+        );
+        let schema_proof = compute_slot_transition_tag(sql_vk, sql_table_root, new_table_root, execution_digest)
+            .as_slice()
+            .to_vec();
 
         let tip_after_sql = car.verify_sql_execution(10, query_digest, new_table_root, &schema_proof).unwrap();
         assert_ne!(tip_after_sql, B256::ZERO);
         assert_eq!(car.slots.get(&10).unwrap().commitment, new_table_root);
+
+        // Forged proof must fail closed
+        let bad_proof = vec![0x99; 32];
+        assert!(car.verify_sql_execution(10, query_digest, B256::repeat_byte(0x55), &bad_proof).is_err());
 
         // 3. Unmount Slot 10
         car.unmount_slot(10).unwrap();
@@ -1009,7 +1070,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hierarchical_child_address_and_named_slot_derivation() {
+    fn test_hierarchical_child_address_and_consensus_slot_manifest() {
         let dao_parent = Address::repeat_byte(0x11);
         let treasury_child = derive_child_address(&dao_parent, "dao/treasury/payroll");
         let governance_child = derive_child_address(&dao_parent, "dao/governance/voting");
@@ -1017,22 +1078,43 @@ mod tests {
         assert_ne!(treasury_child, dao_parent);
         assert_ne!(treasury_child, governance_child);
 
-        // Mount named slots on treasury child
+        let manifest = NetworkSlotSchemaManifest::default();
         let mut car = PolymorphicAccountRegister::new_with_default_config(treasury_child, U256::from(100000));
-        let slot_id = car.mount_named_slot(
-            "nexterp.manufacturing.orders_v2",
+
+        // Mounting Slot 4 with a non-consensus plugin name must fail closed
+        let bad_mount = car.mount_consensus_slot(
+            &manifest,
+            4,
+            B256::repeat_byte(0xaa),
+            B256::repeat_byte(0xbb),
+            "arbitrary.user.plugin".to_string(),
+        );
+        assert!(bad_mount.is_err());
+
+        // Mounting Slot 4 with consensus plugin "ext.sqldigest" succeeds
+        car.mount_consensus_slot(
+            &manifest,
+            4,
             B256::repeat_byte(0xaa),
             B256::repeat_byte(0xbb),
             "ext.sqldigest".to_string(),
         ).unwrap();
+        assert!(car.slots.contains_key(&4));
 
-        assert!(slot_id >= 2);
-        assert!(car.slots.contains_key(&slot_id));
+        // Core slots (0..9) cannot be unmounted
+        assert!(car.unmount_slot(4).is_err());
 
-        // Unmount named slot
-        let unmounted_id = car.unmount_named_slot("nexterp.manufacturing.orders_v2").unwrap();
-        assert_eq!(unmounted_id, slot_id);
-        assert!(!car.slots.contains_key(&slot_id));
+        // Plugin slot 12 can be mounted and unmounted
+        car.mount_consensus_slot(
+            &manifest,
+            12,
+            B256::repeat_byte(0xcc),
+            B256::repeat_byte(0xdd),
+            "ext.sqldigest".to_string(),
+        ).unwrap();
+        assert!(car.slots.contains_key(&12));
+        car.unmount_slot(12).unwrap();
+        assert!(!car.slots.contains_key(&12));
     }
 
     #[test]

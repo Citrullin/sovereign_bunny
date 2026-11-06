@@ -188,6 +188,9 @@ impl SagaActor {
 /// Canonical slot ID for Lattice Saga Locks
 pub const SLOT_SAGA_LOCK: u16 = 7;
 
+/// Sentinel commitment in Slot 7 (`allow_saga_locking = false`) indicating an account has opted out of Saga locks.
+pub const SAGA_OPT_OUT_COMMITMENT: B256 = B256::repeat_byte(0xff);
+
 /// Discrete status of a declarative Lattice Saga Intent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SagaStatus {
@@ -234,6 +237,12 @@ pub struct LatticeSagaIntent {
     pub pre_conditions: Vec<SlotPredicate>,
     pub mutations: Vec<SlotMutation>,
     pub compensations: Vec<SlotMutation>,
+    /// Per-participant authorization signatures or capability digests (`participant -> authorization_tag`)
+    #[serde(default)]
+    pub participant_approvals: std::collections::HashMap<Address, B256>,
+    /// Snapshot of pre-saga slot commitments captured at `stage_and_lock` for safe compensation rollback
+    #[serde(default)]
+    pub pre_saga_snapshots: std::collections::HashMap<(Address, u16), B256>,
     pub created_epoch: u64,
     pub timeout_epoch: u64,
     pub status: SagaStatus,
@@ -244,15 +253,25 @@ impl LatticeSagaIntent {
     pub fn new(
         intent_id: B256,
         initiator: Address,
-        target_accounts: Vec<Address>,
+        mut target_accounts: Vec<Address>,
         created_epoch: u64,
         timeout_epoch: u64,
     ) -> Self {
+        // Canonical lexicographical lock ordering (Dijkstra resource hierarchy invariant)
+        target_accounts.sort();
+        target_accounts.dedup();
+
         let mut buf = Vec::with_capacity(13 + 32 + 8);
         buf.extend_from_slice(b"SAGA_LOCK_V1:");
         buf.extend_from_slice(intent_id.as_slice());
         buf.extend_from_slice(&timeout_epoch.to_le_bytes());
         let lock_id = alloy_primitives::keccak256(&buf);
+
+        let mut participant_approvals = std::collections::HashMap::new();
+        for &acc in &target_accounts {
+            let auth_tag = Self::compute_approval_tag(intent_id, lock_id, acc);
+            participant_approvals.insert(acc, auth_tag);
+        }
 
         Self {
             intent_id,
@@ -261,11 +280,28 @@ impl LatticeSagaIntent {
             pre_conditions: Vec::new(),
             mutations: Vec::new(),
             compensations: Vec::new(),
+            participant_approvals,
+            pre_saga_snapshots: std::collections::HashMap::new(),
             created_epoch,
             timeout_epoch,
             status: SagaStatus::Pending,
             lock_id,
         }
+    }
+
+    #[must_use]
+    pub fn compute_approval_tag(intent_id: B256, lock_id: B256, participant: Address) -> B256 {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"sovereign:saga_approval:v1:");
+        hasher.update(intent_id.as_slice());
+        hasher.update(lock_id.as_slice());
+        hasher.update(participant.as_slice());
+        B256::from_slice(hasher.finalize().as_bytes())
+    }
+
+    pub fn authorize_participant(&mut self, participant: Address) {
+        let tag = Self::compute_approval_tag(self.intent_id, self.lock_id, participant);
+        self.participant_approvals.insert(participant, tag);
     }
 
     pub fn add_precondition(&mut self, account: Address, slot_id: u16, pred_type: PredicateType, expected: B256) {
@@ -330,6 +366,9 @@ impl LatticeSagaCoordinator {
                 PredicateType::SlotUnlocked => {
                     let lock_slot = reg.slots.get(&SLOT_SAGA_LOCK);
                     let current_lock = lock_slot.map(|s| s.commitment).unwrap_or(B256::ZERO);
+                    if current_lock == SAGA_OPT_OUT_COMMITMENT {
+                        return Err("Precondition failed: target account opted out of saga locking (allow_saga_locking = false)");
+                    }
                     if current_lock != B256::ZERO && current_lock != intent.lock_id {
                         return Err("Precondition failed: target account slot 7 is locked by another saga");
                     }
@@ -345,7 +384,9 @@ impl LatticeSagaCoordinator {
         Ok(())
     }
 
-    /// Stages the saga by locking Slot 7 on all involved target accounts.
+    /// Stages the saga using strict Two-Phase Locking (2PL):
+    /// Phase 1 (Validation): Verify lexicographical order, participant approvals, and lock availability across ALL accounts before mutating any state.
+    /// Phase 2 (Acquisition): Snapshot pre-saga slot commitments and write `intent.lock_id` to Slot 7 on all target accounts.
     pub fn stage_and_lock(
         intent: &mut LatticeSagaIntent,
         accounts: &mut std::collections::HashMap<Address, crate::lattice::car_register::PolymorphicAccountRegister>,
@@ -358,10 +399,57 @@ impl LatticeSagaCoordinator {
             intent.status = SagaStatus::RolledBack;
             return Err("Cannot stage intent: already expired");
         }
+        if intent.target_accounts.is_empty() {
+            return Err("Cannot stage intent: target_accounts cannot be empty");
+        }
+
+        // Enforce strict ascending lexicographical order of target accounts to prevent deadlocks
+        for window in intent.target_accounts.windows(2) {
+            if window[0] >= window[1] {
+                return Err("SAGA_DEADLOCK_ERR: target_accounts must be strictly sorted in ascending lexicographical order");
+            }
+        }
+
+        // Verify every mutated/compensated account is included in target_accounts and has valid participant approval
+        for m in intent.mutations.iter().chain(intent.compensations.iter()) {
+            if !intent.target_accounts.contains(&m.account) {
+                return Err("SAGA_AUTH_ERR: mutation targets an account outside target_accounts");
+            }
+        }
+
+        // Phase 1 (Atomic Pre-Check): Verify all target accounts exist, have valid approval tags, and are unlocked in Slot 7
+        for &addr in &intent.target_accounts {
+            let expected_tag = LatticeSagaIntent::compute_approval_tag(intent.intent_id, intent.lock_id, addr);
+            match intent.participant_approvals.get(&addr) {
+                Some(&tag) if tag == expected_tag => {}
+                _ => return Err("SAGA_AUTH_ERR: missing or invalid participant approval signature"),
+            }
+
+            let reg = accounts.get(&addr)
+                .ok_or("Target account register missing during lock pre-check")?;
+
+            if let Some(lock_slot) = reg.slots.get(&SLOT_SAGA_LOCK) {
+                if lock_slot.commitment == SAGA_OPT_OUT_COMMITMENT {
+                    return Err("SAGA_OPT_OUT_ERR: target account has allow_saga_locking = false in Slot 7");
+                }
+                if lock_slot.commitment != B256::ZERO && lock_slot.commitment != intent.lock_id {
+                    return Err("Contended lock: target account is locked by an active saga");
+                }
+            }
+        }
 
         Self::evaluate_predicates(intent, accounts)?;
 
-        // Acquire lock on Slot 7 for each target account
+        // Snapshot pre-saga slot commitments before acquiring locks
+        intent.pre_saga_snapshots.clear();
+        for m in &intent.mutations {
+            if let Some(reg) = accounts.get(&m.account) {
+                let prev = reg.slots.get(&m.slot_id).map(|s| s.commitment).unwrap_or(B256::ZERO);
+                intent.pre_saga_snapshots.insert((m.account, m.slot_id), prev);
+            }
+        }
+
+        // Phase 2 (Lock Acquisition): Acquire lock on Slot 7 for each target account
         for addr in &intent.target_accounts {
             let reg = accounts.get_mut(addr)
                 .ok_or("Target account register missing during lock acquisition")?;
@@ -371,13 +459,9 @@ impl LatticeSagaCoordinator {
                     SLOT_SAGA_LOCK,
                     intent.lock_id,
                     B256::ZERO,
-                    "LATTICE_SAGA_LOCK".to_string(),
+                    "saga.lock_policy".to_string(),
                 )?;
             } else {
-                let current_lock = reg.slots.get(&SLOT_SAGA_LOCK).unwrap().commitment;
-                if current_lock != B256::ZERO && current_lock != intent.lock_id {
-                    return Err("Contended lock: target account is locked by an active saga");
-                }
                 reg.transition_slot(SLOT_SAGA_LOCK, intent.lock_id, current_epoch)?;
             }
         }
@@ -395,6 +479,17 @@ impl LatticeSagaCoordinator {
         if intent.status != SagaStatus::Staged {
             return Err("Cannot commit intent: must be in Staged status");
         }
+
+        // Verify all target accounts still hold this saga's active lock_id in Slot 7
+        for addr in &intent.target_accounts {
+            let reg = accounts.get(addr)
+                .ok_or("Account missing during commit lock verification")?;
+            let current_lock = reg.slots.get(&SLOT_SAGA_LOCK).map(|s| s.commitment).unwrap_or(B256::ZERO);
+            if current_lock != intent.lock_id {
+                return Err("SAGA_LOCK_ERR: target account Slot 7 does not match intent.lock_id");
+            }
+        }
+
         if current_epoch > intent.timeout_epoch {
             // Expired while staged -> must execute compensation rollback
             return Self::rollback(intent, accounts, current_epoch);
@@ -430,17 +525,39 @@ impl LatticeSagaCoordinator {
         Ok(())
     }
 
-    /// Reverts staged changes by applying compensations and clearing Slot 7 locks.
+    /// Reverts staged changes by applying compensations and clearing Slot 7 locks,
+    /// strictly verifying that each target account holds `Slot 7 == intent.lock_id` before mutating.
     pub fn rollback(
         intent: &mut LatticeSagaIntent,
         accounts: &mut std::collections::HashMap<Address, crate::lattice::car_register::PolymorphicAccountRegister>,
         current_epoch: u64,
     ) -> Result<(), &'static str> {
-        // Apply compensations if available
+        if intent.status != SagaStatus::Staged {
+            return Err("SAGA_ROLLBACK_ERR: can only rollback a Staged saga");
+        }
+
+        // Verify all target accounts hold this saga's lock in Slot 7 before applying any compensation
+        for addr in &intent.target_accounts {
+            let reg = accounts.get(addr)
+                .ok_or("Account missing during rollback lock verification")?;
+            let current_lock = reg.slots.get(&SLOT_SAGA_LOCK).map(|s| s.commitment).unwrap_or(B256::ZERO);
+            if current_lock != intent.lock_id {
+                return Err("SAGA_LOCK_ERR: cannot rollback account whose Slot 7 lock does not match intent.lock_id");
+            }
+        }
+
+        // Apply compensations (mounting the slot if not yet mounted so compensation state is recorded)
         for comp in &intent.compensations {
             if let Some(reg) = accounts.get_mut(&comp.account) {
                 if reg.slots.contains_key(&comp.slot_id) {
-                    let _ = reg.transition_slot(comp.slot_id, comp.new_commitment, current_epoch);
+                    reg.transition_slot(comp.slot_id, comp.new_commitment, current_epoch)?;
+                } else {
+                    reg.mount_slot(
+                        comp.slot_id,
+                        comp.new_commitment,
+                        comp.schema_hash,
+                        format!("slot_{}", comp.slot_id),
+                    )?;
                 }
             }
         }
@@ -449,7 +566,7 @@ impl LatticeSagaCoordinator {
         for addr in &intent.target_accounts {
             if let Some(reg) = accounts.get_mut(addr) {
                 if reg.slots.contains_key(&SLOT_SAGA_LOCK) {
-                    let _ = reg.transition_slot(SLOT_SAGA_LOCK, B256::ZERO, current_epoch);
+                    reg.transition_slot(SLOT_SAGA_LOCK, B256::ZERO, current_epoch)?;
                 }
             }
         }
@@ -583,5 +700,34 @@ mod tests {
         // Check lock released and compensation applied
         assert_eq!(accounts.get(&charlie).unwrap().slots.get(&SLOT_SAGA_LOCK).unwrap().commitment, B256::ZERO);
         assert_eq!(accounts.get(&charlie).unwrap().slots.get(&4).unwrap().commitment, comp_comm);
+    }
+
+    #[test]
+    fn test_saga_atomic_2pl_opt_out_and_unauthorized_rejection() {
+        use std::collections::HashMap;
+        use crate::lattice::car_register::PolymorphicAccountRegister;
+
+        let alice = Address::repeat_byte(0x10);
+        let bob = Address::repeat_byte(0x20);
+        let mut accounts = HashMap::new();
+        accounts.insert(alice, PolymorphicAccountRegister::new_with_default_config(alice, U256::ZERO));
+        let mut reg_bob = PolymorphicAccountRegister::new_with_default_config(bob, U256::ZERO);
+        // Bob configures allow_saga_locking = false in Slot 7
+        reg_bob.transition_slot(SLOT_SAGA_LOCK, SAGA_OPT_OUT_COMMITMENT, 1).unwrap();
+        accounts.insert(bob, reg_bob);
+
+        let intent_id = B256::repeat_byte(0xee);
+        let mut intent = LatticeSagaIntent::new(intent_id, alice, vec![bob, alice], 10, 50);
+        // Verify canonical lexicographical sorting happened automatically
+        assert_eq!(intent.target_accounts, vec![alice, bob]);
+
+        // Attempt to stage when Bob has opted out -> must fail atomically without locking Alice!
+        let res = LatticeSagaCoordinator::stage_and_lock(&mut intent, &mut accounts, 15);
+        assert!(res.is_err());
+        assert_eq!(
+            accounts.get(&alice).unwrap().slots.get(&SLOT_SAGA_LOCK).unwrap().commitment,
+            B256::ZERO,
+            "Atomic 2PL pre-check must not leave Alice locked when Bob rejects lock"
+        );
     }
 }

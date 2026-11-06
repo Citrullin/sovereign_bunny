@@ -160,6 +160,84 @@ impl AsyncIntent {
     }
 }
 
+/// Lifecycle status of an external boundary manifold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ManifoldBoundaryState {
+    /// 3-Phase Phase 1: Zero exposure, canary state transitions testing live finality
+    ProbationaryBootstrap,
+    /// 3-Phase Phase 2: Live meshed boundary with active VRF canary probing and dynamic tau_anchor
+    ActiveMeshed,
+    /// 3-Phase Phase 3 / Invariant: External ledger reorganized past an anchored root; boundary permanently frozen
+    FrozenOnSplit,
+}
+
+/// Minimum confirmation horizon required for Ethereum 1.0 / Gasper PoS finality (2 epochs * 32 slots).
+pub const GASPER_FINALITY_HORIZON_SLOTS: u64 = 64;
+
+/// Boundary Manifold Descriptor defining cross-chain consensus parameters and finality horizons.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BoundaryManifoldDescriptor {
+    /// Unique foreign manifold identifier (e.g. 0x02 for Ethereum L1, 0x03 for Base L2)
+    pub manifold_id: u64,
+    /// Human-readable label
+    pub label: String,
+    /// Anchoring confirmation depth horizon (tau_anchor, >= 64 slots for Gasper finality on Ethereum 1.0)
+    pub tau_anchor: u64,
+    /// Whether this boundary requires strict Gasper 2-epoch finality (Casper FFG + LMD-GHOST)
+    pub requires_gasper_finality: bool,
+    /// Minimum Slot 8 operational surety bond required for overlap committee members (Q_{A cap B})
+    pub min_slot8_overlap_bond: U256,
+    /// Herstatt haircut in basis points (0..10_000) applied during settlement
+    pub herstatt_haircut_bps: u32,
+    /// Current boundary lifecycle state
+    pub state: ManifoldBoundaryState,
+    /// Most recently anchored foreign block hash
+    pub last_anchored_foreign_hash: B256,
+    /// Most recently anchored foreign block height
+    pub last_anchored_foreign_height: u64,
+}
+
+impl Default for BoundaryManifoldDescriptor {
+    fn default() -> Self {
+        Self {
+            manifold_id: 1,
+            label: "Ethereum Mainnet (L1)".to_string(),
+            tau_anchor: GASPER_FINALITY_HORIZON_SLOTS, // 64 slots (2 full Gasper epochs) to eliminate reorg / drop risk
+            requires_gasper_finality: true,
+            min_slot8_overlap_bond: U256::from(100_000_000_000_000_000_000u128), // 100 tokens
+            herstatt_haircut_bps: 200, // 2.00%
+            state: ManifoldBoundaryState::ProbationaryBootstrap,
+            last_anchored_foreign_hash: B256::ZERO,
+            last_anchored_foreign_height: 0,
+        }
+    }
+}
+
+impl BoundaryManifoldDescriptor {
+    /// Inspects whether an observed foreign chain reorg past the anchored horizon triggers permanent boundary freeze.
+    pub fn evaluate_reorg_invariants(
+        &mut self,
+        observed_parent_hash: B256,
+        observed_height: u64,
+    ) -> Result<(), &'static str> {
+        if self.state == ManifoldBoundaryState::FrozenOnSplit {
+            return Err("BOUNDARY_FROZEN: Manifold boundary is permanently frozen past split; zero rollback allowed");
+        }
+
+        // If an external chain reports an inconsistent hash at or below the anchored finality horizon,
+        // our network NEVER rolls back: permanently freeze this boundary manifold.
+        if observed_height <= self.last_anchored_foreign_height
+            && self.last_anchored_foreign_hash != B256::ZERO
+            && observed_parent_hash != self.last_anchored_foreign_hash
+        {
+            self.state = ManifoldBoundaryState::FrozenOnSplit;
+            return Err("FROZEN_ON_SPLIT: Deep reorg detected below anchored boundary horizon; boundary permanently frozen");
+        }
+
+        Ok(())
+    }
+}
+
 /// Real Cross-Chain Event Witness Verifier running Snowflake consensus (formerly CrossChainObserverVerifier).
 #[derive(Debug, Default)]
 pub struct CrossChainEventVerifier;
@@ -227,16 +305,21 @@ impl CrossChainEventVerifier {
         Ok(voter.finalized_value.unwrap_or(false))
     }
 
-    /// Cross-verifies foreign chain events by running Snowflake consensus over the sub-committee.
+    /// Cross-verifies foreign chain events by running Snowflake consensus over the sub-committee (H-11).
     pub async fn verify_event_inclusion(
         &self,
         registry: &mut crate::registry::ValidatorRegistry,
         proposer_did: Option<&str>,
         subroutine: &crate::registry::CrossChainObserverSubroutine,
         foreign_rpc_url: &str,
-        _witness_proof: &[u8],
-        _expected_state_root: B256,
+        witness_proof: &[u8],
+        expected_state_root: B256,
+        committee: &CrossChainRelayCommittee,
     ) -> Result<bool, &'static str> {
+        if witness_proof.is_empty() && expected_state_root != B256::ZERO {
+            return Err("Cryptographic witness proof required for foreign state root verification");
+        }
+
         let local_check = self.check_rpc_event(subroutine, foreign_rpc_url).await.unwrap_or(false);
         if !local_check {
             if let Some(did) = proposer_did {
@@ -245,8 +328,14 @@ impl CrossChainEventVerifier {
             return Err("Foreign state root or event slot changed during verification");
         }
 
-        let mock_committee = vec![Address::repeat_byte(0x77)];
-        let consensus_result = self.run_snowflake_consensus(subroutine, foreign_rpc_url, &mock_committee, 0.8, 1, 2).await?;
+        let peers: Vec<Address> = committee.orchestrators.iter().copied().collect();
+        let peers_slice = if peers.is_empty() {
+            return Err("No active committee orchestrators for foreign event consensus");
+        } else {
+            peers.as_slice()
+        };
+
+        let consensus_result = self.run_snowflake_consensus(subroutine, foreign_rpc_url, peers_slice, 0.8, 1, 2).await?;
 
         if !consensus_result {
             if let Some(did) = proposer_did {
@@ -306,5 +395,34 @@ mod tests {
 
         let res = intent.verify_consensus(&committee, false).await;
         assert!(res.is_ok(), "Consensus verification failed: {:?}", res.err());
+    }
+
+    #[test]
+    fn test_boundary_manifold_frozen_on_split_reorg_invariant() {
+        let mut desc = BoundaryManifoldDescriptor {
+            manifold_id: 2,
+            label: "EVM L1 Anchor".to_string(),
+            tau_anchor: GASPER_FINALITY_HORIZON_SLOTS,
+            requires_gasper_finality: true,
+            min_slot8_overlap_bond: U256::from(100),
+            herstatt_haircut_bps: 200,
+            state: ManifoldBoundaryState::ActiveMeshed,
+            last_anchored_foreign_hash: B256::repeat_byte(0xaa),
+            last_anchored_foreign_height: 1000,
+        };
+
+        // Consistent parent hash at height 1000 succeeds
+        assert!(desc.evaluate_reorg_invariants(B256::repeat_byte(0xaa), 1000).is_ok());
+
+        // Conflicting parent hash below or at anchored height triggers permanent boundary freeze
+        let err = desc.evaluate_reorg_invariants(B256::repeat_byte(0xbb), 999);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err(), "FROZEN_ON_SPLIT: Deep reorg detected below anchored boundary horizon; boundary permanently frozen");
+        assert_eq!(desc.state, ManifoldBoundaryState::FrozenOnSplit);
+
+        // Future interactions on frozen boundary are rejected fail-closed
+        let err_frozen = desc.evaluate_reorg_invariants(B256::repeat_byte(0xaa), 1005);
+        assert!(err_frozen.is_err());
+        assert_eq!(err_frozen.unwrap_err(), "BOUNDARY_FROZEN: Manifold boundary is permanently frozen past split; zero rollback allowed");
     }
 }

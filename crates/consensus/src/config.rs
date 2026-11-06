@@ -196,6 +196,15 @@ impl Default for NetworkGenesisConfig {
                     schema_hash: alloy_primitives::keccak256(b"settlement.surety_bond.v1"),
                     encoding: "ssz".to_string(),
                 },
+                SlotSchemaConfig {
+                    slot_id: 9,
+                    name: "CGA IPv6 & DAO App Manifest".to_string(),
+                    plugin_name: "app.dao_manifest".to_string(),
+                    version: 1,
+                    activation_epoch: 0,
+                    schema_hash: alloy_primitives::keccak256(b"app.dao_manifest.v1"),
+                    encoding: "ssz".to_string(),
+                },
             ],
             shard_genesis: ShardGenesisConfig::default(),
             cross_manifold_liquidity: CrossManifoldLiquidityConfig::default(),
@@ -276,7 +285,7 @@ pub struct SystemAccountConfig {
     pub kind: String, // "Precompile", "NamespaceRegistry", etc.
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlotSchemaConfig {
     pub slot_id: u16,
     pub name: String,

@@ -1,6 +1,6 @@
 //! # Virtual CAR State Engine (`car-vstate`)
 //!
-//! High-performance, double-buffered Virtual Compact Account Register (CAR)
+//! High-performance, double-buffered Virtual Chained Account Register (CAR)
 //! tree with 64 linear SSZ slot buffers, SIMD-accelerated bitmask diffing,
 //! delta extraction, and bit-for-bit identical state-root calculation.
 //!
@@ -33,7 +33,7 @@ pub const TYPE_TAG_EV_ASSOC: u16 = 0x0003;         // VR (Vereinsregister) Non-p
 pub const TYPE_TAG_SUPPLY_CONSORTIUM: u16 = 0x0004;// Industrial B2B Consortium
 pub const TYPE_TAG_MUTUAL_BANK: u16 = 0x0005;      // Sparkassen/Volksbanken CBMT Corridor
 
-/// A single slot within the 64-slot Compact Account Register.
+/// A single slot within the 64-slot Chained Account Register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VirtualSlot {
     pub slot_id: u16,

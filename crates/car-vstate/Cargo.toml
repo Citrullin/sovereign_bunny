@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license = "LGPL-2.1"
-description = "Canonical 64-slot Compact Account Register (CAR) Virtual State & SIMD Diffing Engine (Rust / WASM)"
+description = "Canonical 64-slot Chained Account Register (CAR) Virtual State & SIMD Diffing Engine (Rust / WASM)"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

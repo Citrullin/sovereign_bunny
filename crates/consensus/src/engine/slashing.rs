@@ -66,16 +66,21 @@ pub enum SlashReason {
 }
 
 impl SlashReason {
-    /// Returns the standard penalty percentage to deduct from the node's reputation score.
-    pub fn penalty_rate(&self) -> f64 {
+    /// Returns the standard penalty percentage in basis points (0..10_000) (E-3, H-7).
+    pub fn penalty_basis_points(&self) -> u32 {
         match self {
-            Self::CartelFormation => 0.25,
-            Self::MissingCommitment => 0.10,
-            Self::Equivocation { .. } => 0.50,
-            Self::InvalidStateProof { .. } => 1.00, // 100% full eviction
-            Self::ActuatorSafetyFault { .. } => 0.40,
-            Self::FraudulentAttestation { .. } => 1.00, // 100% full eviction
+            Self::CartelFormation => 2500,       // 25.00%
+            Self::MissingCommitment => 1000,     // 10.00%
+            Self::Equivocation { .. } => 5000,   // 50.00%
+            Self::InvalidStateProof { .. } => 10000, // 100.00% full eviction
+            Self::ActuatorSafetyFault { .. } => 4000, // 40.00%
+            Self::FraudulentAttestation { .. } => 10000, // 100.00% full eviction
         }
+    }
+
+    /// Legacy float compatibility helper (clamped 0.0 to 1.0).
+    pub fn penalty_rate(&self) -> f64 {
+        (self.penalty_basis_points() as f64) / 10_000.0
     }
 }
 
@@ -102,7 +107,8 @@ impl SlashingManager {
         }
     }
 
-    /// Applies a structured Byzantine `SlashReason` against a validator node.
+    /// Applies a structured Byzantine `SlashReason` against a validator node,
+    /// slashing their reputation and seizing any active CAR Slot 8 Operational Surety Bond (H-8, E-1).
     pub fn slash_validator(
         registry: &mut crate::registry::ValidatorRegistry,
         did: &str,
@@ -114,11 +120,25 @@ impl SlashingManager {
         let new_rep = (current_rep - penalty).max(0.0);
         registry.reputation.insert(did.to_string(), new_rep);
 
-        // If penalty is full eviction (1.0), demote MeritRank to Rank0
-        if penalty_rate >= 0.99 {
-            if let Some((addr, _)) = registry.address_to_did.iter().find(|(_, d)| *d == did) {
-                if let Some(frontier) = registry.account_frontiers.get_mut(addr) {
+        // Find validator account address
+        if let Some((addr, _)) = registry.address_to_did.iter().find(|(_, d)| *d == did).map(|(a, d)| (*a, d.clone())) {
+            // If penalty is full eviction (>= 0.99), demote MeritRank to Rank0
+            if penalty_rate >= 0.99 {
+                if let Some(frontier) = registry.account_frontiers.get_mut(&addr) {
                     frontier.merit_rank = crate::jurisdiction::MeritRank::Rank0;
+                }
+            }
+
+            // Slash CAR Slot 8 Operational Surety Bond (H-8, E-1)
+            // Seize proportional or full bond based on penalty basis points
+            if let Some(car) = registry.account_registers.get_mut(&addr) {
+                if penalty_rate >= 0.99 {
+                    // Full forfeiture: clear Slot 8 commitment
+                    let _ = car.mount_slot(8, alloy_primitives::B256::ZERO, alloy_primitives::B256::ZERO, "core.operational_bond".to_string());
+                } else {
+                    // Proportional slashing commitment tag update
+                    let slash_tag = alloy_primitives::keccak256(format!("slashed:slot8:{}:{did}", reason.penalty_basis_points()));
+                    let _ = car.mount_slot(8, slash_tag, alloy_primitives::B256::ZERO, "core.operational_bond".to_string());
                 }
             }
         }
@@ -218,6 +238,8 @@ mod tests {
         registry.address_to_did.insert(addr, did.clone());
         let frontier = registry.account_frontiers.entry(addr).or_default();
         frontier.merit_rank = crate::jurisdiction::MeritRank::Rank4;
+        let car = registry.get_or_create_register(addr);
+        let _ = car.mount_slot(8, alloy_primitives::B256::repeat_byte(0x88), alloy_primitives::B256::ZERO, "core.operational_bond".to_string());
 
         // WHEN: Slashing for Equivocation (50% penalty)
         let rep = SlashingManager::slash_validator(
@@ -232,6 +254,7 @@ mod tests {
 
         // THEN: Reputation is reduced by 50%
         assert!((rep - 0.5).abs() < 1e-5);
+        assert_ne!(registry.account_registers.get(&addr).unwrap().slots.get(&8).map(|s| s.commitment), Some(alloy_primitives::B256::repeat_byte(0x88)));
 
         // WHEN: Slashing for InvalidStateProof (100% penalty)
         let rep_final = SlashingManager::slash_validator(
@@ -243,9 +266,10 @@ mod tests {
             },
         );
 
-        // THEN: Reputation collapses to 0.0 and merit rank is reset to Rank0
+        // THEN: Reputation collapses to 0.0, merit rank is reset to Rank0, and Slot 8 bond is forfeited to 0
         assert_eq!(rep_final, 0.0);
         assert_eq!(registry.account_frontiers.get(&addr).unwrap().merit_rank, crate::jurisdiction::MeritRank::Rank0);
+        assert_eq!(registry.account_registers.get(&addr).unwrap().slots.get(&8).map(|s| s.commitment), Some(alloy_primitives::B256::ZERO));
     }
 }
 

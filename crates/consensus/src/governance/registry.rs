@@ -196,7 +196,7 @@ pub struct ValidatorRegistry {
     pub account_balances: HashMap<Address, U256>,
     /// Accounts that have active paymaster sponsorship.
     pub paymaster_sponsors: HashMap<Address, Address>,
-    /// On-chain Chained Account Registers (polymorphic 64-slot arrays)
+    /// On-chain Chained Account Registers (CAR, 64 slots per register)
     pub account_registers: HashMap<Address, crate::lattice::car_register::PolymorphicAccountRegister>,
     /// On-chain verified DAO / Enterprise App Anchors (NextERP, NextCloud, etc.)
     pub dao_app_anchors: HashMap<Address, Vec<crate::lattice::car_register::DaoAppAnchor>>,
@@ -1552,6 +1552,30 @@ impl TwoStageContributionEvaluator {
 
     /// Monthly Epoch Token Distribution (Inflation-based):
     /// T_i^\tau = E_\tau * (M_i^\tau / \sum_j M_j^\tau) * R_i^\tau(i)
+    /// Pure integer fixed-point calculation in U256 basis points (E-3, H-7).
+    #[must_use]
+    pub fn calculate_token_distribution_fixed(
+        epoch_mint_pool: U256,
+        agent_merit_bps: u64,
+        total_network_merit_bps: u64,
+        self_reputation_bps: u64,
+    ) -> U256 {
+        if total_network_merit_bps == 0 || agent_merit_bps == 0 || self_reputation_bps == 0 {
+            return U256::ZERO;
+        }
+
+        // T_i = (epoch_mint_pool * agent_merit * self_reputation) / (total_merit * 10_000)
+        let numerator = epoch_mint_pool
+            .saturating_mul(U256::from(agent_merit_bps))
+            .saturating_mul(U256::from(self_reputation_bps));
+        let denominator = U256::from(total_network_merit_bps).saturating_mul(U256::from(10_000u64));
+        
+        let minted = numerator.checked_div(denominator).unwrap_or(U256::ZERO);
+        // Conserve global supply: cap strictly at epoch mint pool
+        minted.min(epoch_mint_pool)
+    }
+
+    /// Legacy float compatibility helper
     #[must_use]
     pub fn calculate_token_distribution(
         epoch_mint_pool: U256,
@@ -1559,16 +1583,15 @@ impl TwoStageContributionEvaluator {
         total_network_merit: f64,
         self_reputation: f64,
     ) -> U256 {
-        if total_network_merit <= 1e-9 || agent_merit <= 1e-9 {
-            return U256::ZERO;
-        }
-
-        let merit_ratio = agent_merit / total_network_merit;
-        let weighted_share = merit_ratio * self_reputation;
-
-        let pool_f64 = epoch_mint_pool.to::<u128>() as f64;
-        let tokens_f64 = pool_f64 * weighted_share;
-        U256::from(tokens_f64 as u128)
+        let agent_merit_bps = (agent_merit.max(0.0) * 10_000.0) as u64;
+        let total_network_merit_bps = (total_network_merit.max(0.0) * 10_000.0) as u64;
+        let self_reputation_bps = (self_reputation.clamp(0.0, 1.0) * 10_000.0) as u64;
+        Self::calculate_token_distribution_fixed(
+            epoch_mint_pool,
+            agent_merit_bps,
+            total_network_merit_bps,
+            self_reputation_bps,
+        )
     }
 }
 

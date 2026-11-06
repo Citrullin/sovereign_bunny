@@ -180,9 +180,15 @@ impl SovereignExecutor {
             bandwidth_cost = U256::from(cost_u64);
         }
 
-        // 4. Strict Solvency Check
-        let max_evm_cost = gas_price * U256::from(gas_limit) + tx_value;
-        let total_required = upfront_penalty + max_evm_cost + bandwidth_cost;
+        // 4. Strict Solvency Check with checked arithmetic to prevent overflow exploits
+        let max_evm_cost = gas_price
+            .checked_mul(U256::from(gas_limit))
+            .and_then(|c| c.checked_add(tx_value))
+            .ok_or(SovereignError::InsufficientSolvencyForUpfrontBurn)?;
+        let total_required = upfront_penalty
+            .checked_add(max_evm_cost)
+            .and_then(|c| c.checked_add(bandwidth_cost))
+            .ok_or(SovereignError::InsufficientSolvencyForUpfrontBurn)?;
 
         if caller_witness.balance < total_required {
             if bandwidth_request.is_some() {
@@ -192,8 +198,10 @@ impl SovereignExecutor {
         }
 
         // 5. Atomic upfront burn & bandwidth credit locking
-        caller_witness.balance -= upfront_penalty;
-        caller_witness.balance -= bandwidth_cost;
+        caller_witness.balance = caller_witness.balance
+            .checked_sub(upfront_penalty)
+            .and_then(|b| b.checked_sub(bandwidth_cost))
+            .ok_or(SovereignError::InsufficientSolvencyForUpfrontBurn)?;
 
         Ok(upfront_penalty)
     }
@@ -327,8 +335,8 @@ pub fn validate_implicit_state_block(
         }
     }
 
-    // Count valid signatures from registered validators. BFT quorum is enforced below.
-    let mut valid_sig_count: usize = 0;
+    // Count unique valid signatures from registered validators. BFT quorum is enforced below.
+    let mut recovered_signers: std::collections::HashSet<alloy_primitives::Address> = std::collections::HashSet::new();
 
     for sig_bytes in signatures {
         // If quantum_threat is active or envelope is detected, unpack PQ envelope
@@ -355,7 +363,7 @@ pub fn validate_implicit_state_block(
             };
 
             if is_active {
-                valid_sig_count += 1;
+                recovered_signers.insert(derived_addr);
             }
         } else {
             if quantum_threat {
@@ -379,7 +387,7 @@ pub fn validate_implicit_state_block(
                 };
 
                 if is_active {
-                    valid_sig_count += 1;
+                    recovered_signers.insert(recovered_addr);
                 }
             } else {
                 return Err("Signature scheme mismatch or unsupported signature format");
@@ -387,21 +395,21 @@ pub fn validate_implicit_state_block(
         }
     }
 
-    // BFT quorum — require at least ⌊2n/3⌋+1 valid validator signatures.
-    // In test mode we do not have a live validator set, so we require at least 1 valid sig.
+    // BFT quorum — require at least ⌊2n/3⌋+1 valid unique validator signatures.
+    // In test mode we do not have a live validator set, so we require at least 1 valid sig if validator_count == 0.
     let validator_count = if let Ok(reg) = registry_lock.read() {
         reg.validators.len()
     } else {
         0
     };
     let quorum_threshold = if validator_count == 0 {
-        // No registered validators (e.g. genesis / test): require at least 1 valid sig.
+        // No registered validators (e.g. genesis / test harness): require at least 1 valid sig.
         1usize
     } else {
         // Standard BFT quorum: floor(2n/3) + 1
         (validator_count * 2 / 3) + 1
     };
-    if valid_sig_count < quorum_threshold {
+    if recovered_signers.len() < quorum_threshold {
         return Err("Consensus quorum not met: insufficient valid validator signatures on implicit state block");
     }
 
@@ -424,9 +432,6 @@ pub fn compute_eip712_digest(block: &LatticeBlock, chain_id: u64) -> B256 {
     let domain_type_hash = alloy_primitives::keccak256(b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     let name_hash = alloy_primitives::keccak256(b"Sovereign Network");
     let version_hash = alloy_primitives::keccak256(b"1");
-    // HIGH-02: use the canonical system DID registry address as verifying contract so
-    // that the domain separator binds to the actual on-chain registry, preventing
-    // cross-deployment signature replay.
     let verifying_contract = crate::system_registry::SYSTEM_DID_REGISTRY;
     
     let mut domain_buf = Vec::with_capacity(32 * 5);
@@ -439,22 +444,51 @@ pub fn compute_eip712_digest(block: &LatticeBlock, chain_id: u64) -> B256 {
     domain_buf.extend_from_slice(&addr_bytes);
     let domain_separator = alloy_primitives::keccak256(&domain_buf);
 
-    let struct_type_hash = alloy_primitives::keccak256(b"LatticeReceive(address account,bytes32 sendBlockHash,uint256 amount,bytes32 previousHash,uint64 sequence)");
-    let (send_block_hash, amount) = match &block.payload {
-        LatticePayload::Receive { send_block_hash, amount } => (*send_block_hash, *amount),
-        _ => (B256::ZERO, U256::ZERO),
+    let struct_hash = match &block.payload {
+        LatticePayload::Receive { send_block_hash, amount } => {
+            let struct_type_hash = alloy_primitives::keccak256(b"LatticeReceive(address account,bytes32 sendBlockHash,uint256 amount,bytes32 previousHash,uint64 sequence)");
+            let mut buf = Vec::with_capacity(32 * 6);
+            buf.extend_from_slice(struct_type_hash.as_slice());
+            let mut acc = [0u8; 32];
+            acc[12..].copy_from_slice(block.account.as_slice());
+            buf.extend_from_slice(&acc);
+            buf.extend_from_slice(send_block_hash.as_slice());
+            buf.extend_from_slice(&amount.to_be_bytes::<32>());
+            buf.extend_from_slice(block.previous_hash.as_slice());
+            buf.extend_from_slice(&alloy_primitives::U256::from(block.sequence).to_be_bytes::<32>());
+            alloy_primitives::keccak256(&buf)
+        }
+        LatticePayload::Send { recipient, amount } => {
+            let struct_type_hash = alloy_primitives::keccak256(b"LatticeSend(address account,address recipient,uint256 amount,bytes32 previousHash,uint64 sequence)");
+            let mut buf = Vec::with_capacity(32 * 6);
+            buf.extend_from_slice(struct_type_hash.as_slice());
+            let mut acc = [0u8; 32];
+            acc[12..].copy_from_slice(block.account.as_slice());
+            buf.extend_from_slice(&acc);
+            let mut rec = [0u8; 32];
+            rec[12..].copy_from_slice(recipient.as_slice());
+            buf.extend_from_slice(&rec);
+            buf.extend_from_slice(&amount.to_be_bytes::<32>());
+            buf.extend_from_slice(block.previous_hash.as_slice());
+            buf.extend_from_slice(&alloy_primitives::U256::from(block.sequence).to_be_bytes::<32>());
+            alloy_primitives::keccak256(&buf)
+        }
+        _ => {
+            // Canonical generic LatticePayload binding for ContractCall, AbsorbNote, CommitNote, Lease, Unlock, Reclaim
+            let struct_type_hash = alloy_primitives::keccak256(b"LatticeAction(address account,bytes32 previousHash,uint64 sequence,bytes32 payloadHash)");
+            let payload_bytes = scale::Encode::encode(&block.payload);
+            let payload_hash = alloy_primitives::keccak256(&payload_bytes);
+            let mut buf = Vec::with_capacity(32 * 5);
+            buf.extend_from_slice(struct_type_hash.as_slice());
+            let mut acc = [0u8; 32];
+            acc[12..].copy_from_slice(block.account.as_slice());
+            buf.extend_from_slice(&acc);
+            buf.extend_from_slice(block.previous_hash.as_slice());
+            buf.extend_from_slice(&alloy_primitives::U256::from(block.sequence).to_be_bytes::<32>());
+            buf.extend_from_slice(payload_hash.as_slice());
+            alloy_primitives::keccak256(&buf)
+        }
     };
-
-    let mut struct_buf = Vec::with_capacity(32 * 6);
-    struct_buf.extend_from_slice(struct_type_hash.as_slice());
-    let mut account_bytes = [0u8; 32];
-    account_bytes[12..].copy_from_slice(block.account.as_slice());
-    struct_buf.extend_from_slice(&account_bytes);
-    struct_buf.extend_from_slice(send_block_hash.as_slice());
-    struct_buf.extend_from_slice(&amount.to_be_bytes::<32>());
-    struct_buf.extend_from_slice(block.previous_hash.as_slice());
-    struct_buf.extend_from_slice(&alloy_primitives::U256::from(block.sequence).to_be_bytes::<32>());
-    let struct_hash = alloy_primitives::keccak256(&struct_buf);
 
     let mut final_buf = Vec::with_capacity(2 + 32 + 32);
     final_buf.extend_from_slice(b"\x19\x01");
@@ -534,12 +568,13 @@ pub fn execute_lattice_block(block: &LatticeBlock) -> Result<B256, &'static str>
     }
 
     // 6. Verify signature using the DID's registered public key or legacy Secp256k1 recovery
+    #[cfg(test)]
     let is_mock = block.signature == vec![0x00];
+    #[cfg(not(test))]
+    let is_mock = false;
+
     if is_mock {
-        #[cfg(not(test))]
-        if std::env::var("SOVEREIGN_MOCK_SGX").is_err() {
-            return Err("Cryptographic signature required on lattice block");
-        }
+        // Mock signatures are strictly isolated to #[cfg(test)] builds.
     } else if let Some(did) = reg.get_did_by_address(&block.account) {
         let ident = reg.identities.get(&did)
             .ok_or("Registered DID identity not found in registry")?;

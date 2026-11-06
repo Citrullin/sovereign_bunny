@@ -83,6 +83,12 @@ pub struct BondedRelayStake {
     pub sequence_nonce: u64,
 }
 
+/// Number of slots in a single Gasper epoch on Ethereum PoS.
+pub const GASPER_EPOCH_SLOTS: u64 = 32;
+
+/// Minimum confirmation depth in slots required for Gasper 2-epoch finality on Ethereum 1.0 compatible chains.
+pub const GASPER_FINALITY_MIN_SLOTS: u64 = 64;
+
 /// Cross-Chain Mesh State & Interface Registry.
 #[derive(Debug, Clone, Default)]
 pub struct CrossChainMeshEngine {
