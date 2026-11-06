@@ -398,8 +398,14 @@ export class StateObjectModel {
             ? this.committedHistory[this.committedHistory.length - 1].stateRoot 
             : ethers.ZeroHash;
         
-        // Compute state root over 64 slots
-        const stateRoot = ethers.keccak256(ethers.concat(this.buffer.slots));
+        // Compute state root over 32-byte LE nonce prefix + 64 slots (matching car-vstate & car_register.rs)
+        const nonceBytes = new Uint8Array(32);
+        let n = nextNonce;
+        for (let i = 0; i < 8; i++) {
+            nonceBytes[i] = Number(n & 0xffn);
+            n >>= 8n;
+        }
+        const stateRoot = ethers.keccak256(ethers.concat([nonceBytes, ...this.buffer.slots]));
 
         const block: StateBlock = {
             blockHeight: this.currentBlockHeight,
@@ -478,6 +484,9 @@ export class StateObjectModel {
         const inverseMutations = new Map<number, SlotPatch>();
 
         for (const [slot, targetVal] of squashedInverseSlots.entries()) {
+            if (!this.canMutate(slot)) {
+                throw new Error(`Permission denied: Account lacks write authorization to mutate slot ${slot} in revert`);
+            }
             const oldVal = this.getSlot(slot);
             this.buffer.setSlot(slot, targetVal);
 
@@ -502,7 +511,13 @@ export class StateObjectModel {
         // Record the compensating revert block into the DAG
         this.currentBlockHeight += 1n;
         const parentHash = this.committedHistory[this.committedHistory.length - 1].stateRoot;
-        const stateRoot = ethers.keccak256(ethers.concat(this.buffer.slots));
+        const revertNonceBytes = new Uint8Array(32);
+        let rn = nextNonce;
+        for (let i = 0; i < 8; i++) {
+            revertNonceBytes[i] = Number(rn & 0xffn);
+            rn >>= 8n;
+        }
+        const stateRoot = ethers.keccak256(ethers.concat([revertNonceBytes, ...this.buffer.slots]));
 
         const revertBlock: StateBlock = {
             blockHeight: this.currentBlockHeight,
@@ -537,8 +552,9 @@ export class StateObjectModel {
         skReclaim?: string;
     }): BlindNoteSagaState {
         const reclaimSecret = params.skReclaim || ethers.hexlify(ethers.randomBytes(32));
+        const spendSecret = ethers.hexlify(ethers.randomBytes(32));
         const spendingNullifier = ethers.keccak256(
-            ethers.toUtf8Bytes(`${params.sagaId}:spend:${params.counterpartyDid}`)
+            ethers.toUtf8Bytes(`${spendSecret}:spend:${params.sagaId}:${params.counterpartyDid}`)
         );
         const reclaimNullifier = ethers.keccak256(
             ethers.toUtf8Bytes(`${reclaimSecret}:reclaim:${params.sagaId}`)

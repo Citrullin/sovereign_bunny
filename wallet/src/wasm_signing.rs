@@ -118,14 +118,22 @@ pub async fn sign_evm_transaction(
     Ok(format!("0x{}", alloy_primitives::hex::encode(buf)))
 }
 
+fn derive_mldsa_seed(seed: &[u8]) -> Result<[u8; 32], JsValue> {
+    if seed.len() < 32 {
+        return Err(JsValue::from_str("ML-DSA seed entropy must be at least 32 bytes"));
+    }
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+    let hk = Hkdf::<Sha256>::new(Some(b"sovereign:mldsa65:salt"), seed);
+    let mut okm = [0u8; 32];
+    hk.expand(b"sovereign:mldsa65:v1", &mut okm)
+        .map_err(|_| JsValue::from_str("HKDF expansion for ML-DSA seed failed"))?;
+    Ok(okm)
+}
+
 fn sign_with_mldsa(seed: &[u8], payload_hash: &[u8]) -> Result<Vec<u8>, JsValue> {
     use fips204::traits::Signer;
-    let mut ml_seed = [0u8; 32];
-    if seed.len() >= 32 {
-        ml_seed.copy_from_slice(&seed[0..32]);
-    } else {
-        ml_seed[..seed.len()].copy_from_slice(seed);
-    }
+    let ml_seed = derive_mldsa_seed(seed)?;
     let (_, sk) = fips204::ml_dsa_65::KG::keygen_from_seed(&ml_seed);
     let sig = sk.try_sign(payload_hash, &[])
         .map_err(|_| JsValue::from_str("ML-DSA signature generation failed"))?;

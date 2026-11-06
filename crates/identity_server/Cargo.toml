@@ -19,6 +19,7 @@ blake3 = { workspace = true }
 k256 = { workspace = true, features = ["ecdsa"] }
 hex = { workspace = true }
 time = "0.3"
+rand = "0.8"
 
 [dev-dependencies]
 serial_test = "3.1"

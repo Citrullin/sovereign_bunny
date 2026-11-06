@@ -34,6 +34,8 @@ alloy-network = "2.1.1"
 alloy-rlp = "0.3"
 bip32 = "0.5.1"
 blake3 = { workspace = true }
+hkdf = "0.12"
+sha2 = "0.10"
 
 [dependencies.web-sys]
 version = "0.3.103"

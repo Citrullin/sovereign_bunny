@@ -2086,6 +2086,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "car-vstate"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "blake3",
+ "hex",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sovereign-consensus",
+ "tiny-keccak",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "castaway"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11444,6 +11459,7 @@ dependencies = [
  "sovereign-consensus",
  "sovereign-crypto",
  "sovereign-identity",
+ "time",
  "tokio",
  "tracing",
 ]

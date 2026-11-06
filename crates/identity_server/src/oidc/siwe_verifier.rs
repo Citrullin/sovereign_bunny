@@ -7,8 +7,15 @@
 //! 4. On-chain Zanzibar ReBAC permission verification (Slot 1 / `0x61` precompile).
 
 use alloy_primitives::Address;
+use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::{Mutex, OnceLock};
 use crate::verifier::AuthVerificationResult;
+
+fn get_consumed_nonces() -> &'static Mutex<HashMap<String, u64>> {
+    static CONSUMED_NONCES: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    CONSUMED_NONCES.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Verifies a SIWE message and signature against on-chain DID and Zanzibar state.
 ///
@@ -31,10 +38,16 @@ pub fn verify_siwe(
     let claimed_account = Address::from(parsed.address);
 
     // 2. Cryptographic signature and message validation
-    // Enforce non-empty nonce for replay protection
-    if parsed.nonce.trim().is_empty() {
+    // Enforce non-empty nonce for replay protection with single-use caching
+    let nonce = parsed.nonce.trim();
+    if nonce.is_empty() {
         return Err("SIWE message must include a non-empty cryptographic nonce");
     }
+
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
 
     // Verify expiration time if present
     if let Some(exp) = &parsed.expiration_time {
@@ -102,6 +115,18 @@ pub fn verify_siwe(
         && !reg.zanzibar_engine.check_oidc_service_access(expected_client_id, claimed_account)
     {
         return Err("Zanzibar ReBAC access check failed for service (Slot 1)");
+    }
+
+    {
+        let mut nonces = get_consumed_nonces().lock().map_err(|_| "Failed to lock SIWE nonce cache")?;
+        // Prune expired nonces older than 60 seconds
+        nonces.retain(|_, &mut exp| exp > now_secs);
+
+        if nonces.contains_key(nonce) {
+            return Err("SIWE nonce has already been consumed (replay attack rejected)");
+        }
+        // Cache nonce with 60s TTL
+        nonces.insert(nonce.to_string(), now_secs + 60);
     }
 
     Ok(AuthVerificationResult {

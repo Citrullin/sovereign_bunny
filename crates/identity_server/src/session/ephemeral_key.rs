@@ -4,6 +4,8 @@
 //! on-chain blind session commitments (Slot 0 / Slot 1 anchor).
 
 use alloy_primitives::{Address, B256};
+use rand::rngs::OsRng;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -49,7 +51,7 @@ impl EphemeralKeyManager {
         }
     }
 
-    /// Creates and caches a new ephemeral session key with a 24-hour TTL.
+    /// Creates and caches a new ephemeral session key with a 24-hour TTL using cryptographically secure random entropy.
     pub fn create_session(
         &self,
         account: Address,
@@ -58,8 +60,9 @@ impl EphemeralKeyManager {
         ttl_secs: u64,
     ) -> EphemeralSessionKey {
         let expires_at = now_secs + ttl_secs;
-        let random_seed = blake3::hash(format!("{account:#x}:{client_id}:{now_secs}").as_bytes());
-        let session_secret = B256::from_slice(random_seed.as_bytes());
+        let mut random_bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut random_bytes);
+        let session_secret = B256::from_slice(&random_bytes);
         let commitment = EphemeralSessionKey::compute_commitment(
             account,
             client_id,

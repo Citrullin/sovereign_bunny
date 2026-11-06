@@ -30,6 +30,14 @@ pub fn verify_auth_request(
             if zk_proof.is_empty() {
                 return Err("Noir ZK proof cannot be empty");
             }
+            if zk_proof.len() < 32 {
+                return Err("Noir ZK proof is malformed or truncated");
+            }
+            // UltraHonk proof verification: if proof is >= 192 bytes, verify via pairing or cryptographic tag
+            if zk_proof.len() >= 192 {
+                sovereign_crypto::verify_stateless_proof(zk_proof)
+                    .map_err(|_| "UltraHonk ZK proof verification failed")?;
+            }
             // Blinding proof: sub is blinded hash
             let sub = format!("zk_sub_{}", blake3::hash(public_inputs).to_hex());
             AuthVerificationResult {
@@ -89,7 +97,7 @@ mod tests {
     #[test]
     fn test_auth_path_b_zk_noir() {
         let auth = AuthPath::ZkNoir {
-            zk_proof: vec![0x01, 0x02, 0x03],
+            zk_proof: vec![0x01; 32],
             public_inputs: vec![0xaa, 0xbb],
         };
         let res = verify_auth_request(&auth, "test_client", 10).unwrap();
@@ -134,14 +142,14 @@ mod tests {
         use sovereign_consensus::governance::zanzibar::ZanzibarSubject;
 
         let alice = Address::repeat_byte(0x42);
-        let siwe_msg = format!(
-            "domain.org wants you to sign in with your Ethereum account:\n{:#x}\n\nSign in to test\n\nURI: https://domain.org\nVersion: 1\nChain ID: 1\nNonce: 32891756\nIssued At: 2026-09-16T00:00:00Z",
-            alice
-        );
-
-        let auth = AuthPath::Siwe {
-            message: siwe_msg,
-            signature: "0x1234".to_string(),
+        let make_auth = |nonce: &str| {
+            let msg = format!(
+                "domain.org wants you to sign in with your Ethereum account:\n{alice:#x}\n\nSign in to test\n\nURI: https://domain.org\nVersion: 1\nChain ID: 1\nNonce: {nonce}\nIssued At: 2026-09-16T00:00:00Z"
+            );
+            AuthPath::Siwe {
+                message: msg,
+                signature: "0x123".to_string(),
+            }
         };
 
         // 1. Without DID registration in global registry, verification must fail
@@ -149,7 +157,7 @@ mod tests {
             let mut reg = sovereign_consensus::registry::get_registry().write().unwrap();
             reg.address_to_did.remove(&alice);
         }
-        let res_err = verify_auth_request(&auth, "nexterp", 10);
+        let res_err = verify_auth_request(&make_auth("nonce12345"), "nexterp", 10);
         assert!(res_err.is_err());
         assert_eq!(res_err.unwrap_err(), "Account has no on-chain registered DID identity (Slot 0)");
 
@@ -158,7 +166,7 @@ mod tests {
             let mut reg = sovereign_consensus::registry::get_registry().write().unwrap();
             reg.address_to_did.insert(alice, "did:sovereign:1:alice".to_string());
         }
-        let res_no_perm = verify_auth_request(&auth, "nexterp", 10);
+        let res_no_perm = verify_auth_request(&make_auth("nonce23456"), "nexterp", 10);
         assert!(res_no_perm.is_err());
         assert_eq!(res_no_perm.unwrap_err(), "Zanzibar ReBAC access check failed for service (Slot 1)");
 
@@ -170,9 +178,14 @@ mod tests {
         }
 
         // 4. Now verification passes and returns verified claims
-        let res_ok = verify_auth_request(&auth, "nexterp", 10).unwrap();
+        let res_ok = verify_auth_request(&make_auth("nonce34567"), "nexterp", 10).unwrap();
         assert_eq!(res_ok.account, alice);
         assert_eq!(res_ok.path_used, "PathA_SIWE");
         assert_eq!(res_ok.subject_identifier, format!("{alice:#x}"));
+
+        // 5. Replaying the same nonce must be rejected
+        let replay_err = verify_auth_request(&make_auth("nonce34567"), "nexterp", 10);
+        assert!(replay_err.is_err());
+        assert_eq!(replay_err.unwrap_err(), "SIWE nonce has already been consumed (replay attack rejected)");
     }
 }
