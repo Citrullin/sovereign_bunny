@@ -250,24 +250,7 @@ async fn main() -> eyre::Result<()> {
                 }
                 Ok(())
             }
-            ClusterCommands::Run { name, backend: _, bgp_asn, debug, toy_mode } => {
-                if toy_mode {
-                    // Safety: refuse toy mode when real SGX hardware is detected.
-                    let has_sgx_hw = std::path::Path::new("/dev/attestation").exists()
-                        || std::path::Path::new("/dev/sgx/enclave").exists();
-                    if has_sgx_hw {
-                        return Err(eyre::eyre!(
-                            "Cannot start bunny cluster in toy mode: SGX hardware enclave detected. \
-                             Remove --toy-mode for production use."
-                        ));
-                    }
-                    println!("{}", sovereign_crypto::toy_mode::TOY_MODE_WARNING);
-                    // Auto-set SOVEREIGN_MOCK_SGX so all SGX shims in the node processes activate.
-                    // SAFETY: startup-time env mutation before worker threads spawn.
-                    #[allow(unused_unsafe)]
-                    unsafe { std::env::set_var("SOVEREIGN_MOCK_SGX", "1"); }
-                    println!("⚠️  TOY MODE: SOVEREIGN_MOCK_SGX auto-set — mock SGX attestation active");
-                }
+            ClusterCommands::Run { name, backend: _, bgp_asn, debug } => {
                 if debug {
                     std::env::set_var("RUST_LOG", "debug");
                 }
@@ -275,7 +258,7 @@ async fn main() -> eyre::Result<()> {
                     .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
                     .try_init();
 
-                println!("🐇 Starting Sovereign Bunny Localhost Microservice Cluster '{}' (BGP ASN: {}, debug: {}, toy_mode: {})", name, bgp_asn, debug, toy_mode);
+                println!("🐇 Starting Sovereign Bunny Localhost Microservice Cluster '{}' (BGP ASN: {}, debug: {})", name, bgp_asn, debug);
                 daemons::run_localhost_cluster(bgp_asn).await.map_err(|e| eyre::eyre!("{e}"))?;
                 Ok(())
             }

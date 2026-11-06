@@ -44,7 +44,7 @@ pub struct MvskTransitionRequest {
     pub current_nonce: u64,
     /// Proposed monotonic sequence nonce (must be exactly `current_nonce + 1`).
     pub proposed_nonce: u64,
-    /// Target Compact Account Register (CAR) slot identifier (0..63).
+    /// Target Chained Account Register (CAR) slot identifier (0..63).
     pub target_slot: u8,
     /// Raw state transition delta targeting the CAR slot.
     pub slot_delta: Vec<u8>,
@@ -117,12 +117,13 @@ impl MvskStateKernel {
         }
 
         // 2. Fail-Closed Cryptographic Signature Validation
-        // Constructs canonical message digest: H("mvsk:transition:v1:" || account_id || proposed_nonce || target_slot || slot_delta)
-        let message_to_verify = compute_transition_digest(
+        // Constructs canonical message digest: H("mvsk:transition:v1:" || account_id || proposed_nonce || target_slot || slot_delta || nullifiers)
+        let message_to_verify = compute_transition_digest_with_nullifiers(
             &req.account_id,
             req.proposed_nonce,
             req.target_slot,
             &req.slot_delta,
+            &req.nullifiers_to_absorb,
         );
 
         if !verify_ed25519(&req.account_id, &message_to_verify, &req.ed25519_sig) {
@@ -133,7 +134,7 @@ impl MvskStateKernel {
         if self.enforce_strict_tee {
             let quote = req.tee_dcap_quote.as_ref()
                 .ok_or("MVSK_ERR: Hardware TEE DCAP quote strictly required")?;
-            if !verify_intel_dcap_quote(quote, &self.trusted_enclave_mrsigner) {
+            if !verify_intel_dcap_quote_with_report_data(quote, &self.trusted_enclave_mrsigner, &message_to_verify) {
                 return Err("MVSK_ERR: TEE quote rejected; debug quotes strictly barred");
             }
         }
@@ -156,21 +157,34 @@ impl MvskStateKernel {
     }
 }
 
-/// Computes canonical Blake3 digest of a transition request.
+/// Computes canonical Blake3 digest of a transition request including absorbed nullifiers (H-5).
 #[must_use]
+pub fn compute_transition_digest_with_nullifiers(
+    account_id: &[u8; 32],
+    proposed_nonce: u64,
+    target_slot: u8,
+    slot_delta: &[u8],
+    nullifiers: &[[u8; 32]],
+) -> [u8; 32] {
+    let mut hasher = Hasher::new();
+    hasher.update(b"sovereign:mvsk:transition:v2:");
+    hasher.update(account_id);
+    hasher.update(&proposed_nonce.to_le_bytes());
+    hasher.update(&[target_slot]);
+    hasher.update(slot_delta);
+    for n in nullifiers {
+        hasher.update(n);
+    }
+    *hasher.finalize().as_bytes()
+}
+
 pub fn compute_transition_digest(
     account_id: &[u8; 32],
     proposed_nonce: u64,
     target_slot: u8,
     slot_delta: &[u8],
 ) -> [u8; 32] {
-    let mut hasher = Hasher::new();
-    hasher.update(b"sovereign:mvsk:transition:v1:");
-    hasher.update(account_id);
-    hasher.update(&proposed_nonce.to_le_bytes());
-    hasher.update(&[target_slot]);
-    hasher.update(slot_delta);
-    *hasher.finalize().as_bytes()
+    compute_transition_digest_with_nullifiers(account_id, proposed_nonce, target_slot, slot_delta, &[])
 }
 
 /// Verifies Ed25519 signature fail-closed without any mock bypasses.
@@ -196,11 +210,12 @@ pub fn verify_ed25519(
     verifying_key.verify(message, &sig).is_ok()
 }
 
-/// Verifies Intel DCAP Quote fail-closed, ensuring non-debug status and matching MRSIGNER.
+/// Verifies Intel DCAP Quote fail-closed, ensuring non-debug status, matching MRSIGNER, and bound report data (H-1, H-2).
 #[must_use]
-pub fn verify_intel_dcap_quote(
+pub fn verify_intel_dcap_quote_with_report_data(
     quote: &[u8],
     trusted_mrsigner: &[u8; 32],
+    expected_report_data: &[u8; 32],
 ) -> bool {
     // Minimum valid SGX quote length is 432 bytes (header + report body + auth data)
     if quote.len() < 432 {
@@ -222,9 +237,9 @@ pub fn verify_intel_dcap_quote(
     }
 
     // Enclave Report Body is located at offset 48, length 384:
-    // Offset 48 + 96 = 144: Attributes (16 bytes). Flags byte at 144:
+    // Offset 48 + 48 = 96: Attributes (16 bytes). Flags byte at 96 (H-1):
     // Bit 1 (0x02) is DEBUG flag. Debug enclaves MUST BE REJECTED in production!
-    let attributes_flags = quote[144];
+    let attributes_flags = quote[96];
     if (attributes_flags & 0x02) != 0 {
         // Enclave is running in DEBUG mode — strictly barred!
         return false;
@@ -238,7 +253,23 @@ pub fn verify_intel_dcap_quote(
         }
     }
 
+    // Offset 48 + 320 = 368: REPORTDATA (64 bytes). Bound to transition digest (H-2)
+    if expected_report_data != &[0u8; 32] && quote.len() >= 400 {
+        let report_data = &quote[368..400];
+        if report_data != expected_report_data {
+            return false;
+        }
+    }
+
     true
+}
+
+#[must_use]
+pub fn verify_intel_dcap_quote(
+    quote: &[u8],
+    trusted_mrsigner: &[u8; 32],
+) -> bool {
+    verify_intel_dcap_quote_with_report_data(quote, trusted_mrsigner, &[0u8; 32])
 }
 
 /// Computes the deterministic Blake3 slot root commitment for a CAR register.
@@ -378,7 +409,7 @@ mod tests {
 
         let nullifier = [0x99u8; 32];
         let slot_delta = b"absorb_note".to_vec();
-        let msg1 = compute_transition_digest(&account_id, 1, 2, &slot_delta);
+        let msg1 = compute_transition_digest_with_nullifiers(&account_id, 1, 2, &slot_delta, &[nullifier]);
         use ed25519_dalek::Signer;
         let sig1 = signing_key.sign(&msg1).to_bytes();
 
@@ -397,7 +428,7 @@ mod tests {
         assert!(kernel.validate_and_apply(&req1).is_ok());
 
         // Second absorption of identical nullifier must be rejected
-        let msg2 = compute_transition_digest(&account_id, 2, 2, &slot_delta);
+        let msg2 = compute_transition_digest_with_nullifiers(&account_id, 2, 2, &slot_delta, &[nullifier]);
         let sig2 = signing_key.sign(&msg2).to_bytes();
 
         let req2 = MvskTransitionRequest {

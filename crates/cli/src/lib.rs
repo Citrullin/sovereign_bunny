@@ -239,8 +239,6 @@ pub enum ClusterCommands {
         bgp_asn: u32,
         #[arg(short, long, default_value_t = false)]
         debug: bool,
-        #[arg(long, default_value_t = false)]
-        toy_mode: bool,
     },
     /// Export all manifests, systemd unit files, and WireGuard mesh configurations to disk
     Export {

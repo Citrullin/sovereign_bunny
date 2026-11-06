@@ -133,7 +133,7 @@ impl ClusterBackendOps {
             return Err(eyre::eyre!(
                 "Kubernetes CLI (`kubectl`) is not installed or not in PATH.\n\
                  -> For local development without Kubernetes, run the local cluster via:\n\
-                    bunny cluster run --toy-mode\n\
+                    bunny cluster run\n\
                  -> Or specify an active context with `bunny config use-context localhost`."
             ));
         }

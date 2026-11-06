@@ -87,10 +87,6 @@ pub struct SovereignArgs {
     #[arg(long = "sov-proxy-port", default_value_t = 8546)]
     pub sov_proxy_port: u16,
 
-    /// Toy mode flag (downgrades cryptographic parameters for rapid development/testing)
-    #[arg(long = "toy-mode", default_value_t = false)]
-    pub toy_mode: bool,
-
     /// Native currency ticker symbol (default: TBL)
     #[arg(long = "sov-ticker", default_value = "TBL")]
     pub sov_ticker: String,
@@ -111,7 +107,6 @@ impl Default for SovereignArgs {
             sov_crypto_profile: None,
             sov_parallel_engine: None,
             sov_proxy_port: 8546,
-            toy_mode: false,
             sov_ticker: "TBL".to_string(),
         }
     }
@@ -236,7 +231,7 @@ async fn sovereign_exex<N: FullNodeComponents>(
                 //
                 // For now: fire on every new canonical tip as a stub (epoch_id = tip number).
                 if let Ok(mut reg) = registry_lock.write() {
-                    // Placeholder: treat each block as a potential epoch trigger only in dev/toy mode.
+                    // Placeholder: treat each block as a potential epoch trigger only in dev mode.
                     // In production, this branch is replaced by the ThresholdEpochMarker handler.
                     let block_number = tip.number();
                     if block_number > 0 {
@@ -344,32 +339,8 @@ fn main() {
             }
         }
 
-        let toy_mode_active = args.toy_mode || std::env::var("SOVEREIGN_TOY_MODE").is_ok();
-        if toy_mode_active {
-            // Safety guard: refuse toy mode when real SGX hardware is present.
-            // Toy mode disables real attestation — running it on an SGX node is a security hazard.
-            let has_sgx_hw = std::path::Path::new("/dev/attestation").exists()
-                || std::path::Path::new("/dev/sgx/enclave").exists();
-            if has_sgx_hw {
-                return Err(eyre::eyre!(
-                    "Cannot start in toy mode: SGX hardware enclave detected \
-                     (/dev/attestation or /dev/sgx/enclave present). \
-                     Remove --toy-mode / SOVEREIGN_TOY_MODE for production use."
-                ));
-            }
-            eprintln!("{}", sovereign_crypto::toy_mode::TOY_MODE_WARNING);
-            info!("⚠️ Running in TOY MODE — reduced security parameters active");
-
-            // Cross-wire SOVEREIGN_MOCK_SGX so that all SGX shims in attestation,
-            // stateless.rs, proxy.rs, and forward.rs correctly bypass real DCAP paths.
-            // SAFETY: environment variable mutation; safe at startup before any threads touch it.
-            #[allow(unused_unsafe)]
-            unsafe { std::env::set_var("SOVEREIGN_MOCK_SGX", "1"); }
-            info!("⚠️ TOY MODE: SOVEREIGN_MOCK_SGX auto-set — mock SGX attestation active");
-        }
-
         let proxy_port = args.sov_proxy_port;
-        let is_dev = std::env::args().any(|arg| arg == "--dev" || arg == "--toy-mode") || args.toy_mode;
+        let is_dev = std::env::args().any(|arg| arg == "--dev");
 
         if is_dev {
             info!("Launching Sovereign Reth Node in DEV mode (Auto-Mining)");

@@ -192,7 +192,13 @@ async fn test_real_enclave_daemon_attestation_verification() {
     let client = reqwest::Client::new();
     let rpc_url = format!("http://127.0.0.1:{port}");
 
-    let mock_quote = hex::encode(b"MOCK_SGX_QUOTE_VALID_PROVEN_BY_INTEL_DCAP");
+    // Construct valid 432-byte production DCAP quote
+    let mut raw_quote = vec![0u8; 432];
+    raw_quote[0] = 3; // Version 3
+    raw_quote[4] = 0; // SGX TEE type 0
+    raw_quote[96] = 0x00; // is_debug = false (production)
+
+    let mock_quote = hex::encode(raw_quote);
     let resp: Value = client.post(&rpc_url)
         .json(&json!({
             "jsonrpc": "2.0",

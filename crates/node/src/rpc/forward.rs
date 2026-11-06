@@ -92,8 +92,7 @@ pub async fn send_funding_tx(reth_port: u16, target: Address, value: U256) -> Re
     let funder_key = if let Ok(k) = std::env::var("SOVEREIGN_FUNDER_KEY") {
         k
     } else if cfg!(debug_assertions)
-        || std::env::var("SOVEREIGN_MOCK_SGX").is_ok()
-        || std::env::args().any(|arg| arg == "--dev" || arg == "--toy-mode")
+        || std::env::args().any(|arg| arg == "--dev")
     {
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()
     } else {

@@ -9,7 +9,7 @@
 //! - `bunny ctl get compliance`: Inspect Dual-Jurisdiction SMT exclusion roots and passport validation.
 //! - `bunny ctl did ...`: Generate, wrap SSZ, parse CAIP, and resolve multi-key DIDs (subsuming `did-tool`).
 //! - `bunny ctl config ...`: Manage cluster endpoints (`localhost`, `k8s-cluster`, `production-mesh`).
-//! - `bunny ctl describe cluster`: Mode (Toy Mode vs Production Mode), OpenTelemetry endpoint, active epoch cut height, total TPS.
+//! - `bunny ctl describe cluster`: Cluster status, OpenTelemetry endpoint, active epoch cut height, total TPS.
 //! - `bunny ctl logs <daemon>`: Stream logs with granular per-daemon filtering (`gateway=info,committee=debug`).
 
 use clap::{Args, Subcommand};
@@ -440,7 +440,7 @@ impl CtlCommands {
             println!("  Environment:        localhost-dev (K3s / Local Multi-Process Mesh)");
             println!("  Attestation Mode:   Simulated / Software Enclave (No Hardware SGXv2 on Hetzner Host)");
             println!("  Consensus Engine:   Rotating Paxos over Snowman Linked Roots");
-            println!("  State Architecture: Microkernel Polymorphic Chained Account-Registers (CAR)");
+            println!("  State Architecture: Chained Account Registers (CAR)");
             println!("  Cold Storage Slots: Slot 0 (DID Document), Slot 1 (Zanzibar ReBAC)");
             println!("  Execution Slots:    Slot 2 (EVM Core), Slot 3 (Git), Slot 4 (SxT SQL), Slot 5 (ActivityPub)");
             println!("  Active Shards:      4 dynamic trie partitions (0x0000..0xFFFF)");
