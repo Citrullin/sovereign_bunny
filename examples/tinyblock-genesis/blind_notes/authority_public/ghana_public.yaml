@@ -1,0 +1,15 @@
+target_account: "0x0000000000000000000000000000000000000203"
+target_slot: 5
+value: "0x0"
+is_public: true
+content_type: "xroad_descriptor"
+nullifier: "0x0000000000000000000000000000000000000000000000000000000000009401"
+secret: "0x0000000000000000000000000000000000000000000000000000000000009401"
+iroh_cid: "bafybeigghanapublicnote001"
+payload:
+  member_class: "CENTRAL_BANK"
+  member_code: "GH-BOG-001"
+  subsystem_code: "SettlementGateway"
+  endpoint_url_hash: "keccak256(https://bog.gov.gh/)"
+  cert_fingerprint_sha256: "PLACEHOLDER_GH_BOG_CERT_HASH"
+  protocol_version: "4.0"

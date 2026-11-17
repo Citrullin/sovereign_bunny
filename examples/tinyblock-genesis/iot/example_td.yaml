@@ -1,0 +1,5 @@
+address: "0x0000000000000000000000000000000000000501"
+thing_description_url: "https://raw.githubusercontent.com/w3c/wot-thing-description/main/test/example.td.jsonld"
+td_version: "1.1"
+td_digest: "sha256:PLACEHOLDER_W3C_THING_DESCRIPTION_DIGEST"
+description: "Edge environmental IoT telemetry device"

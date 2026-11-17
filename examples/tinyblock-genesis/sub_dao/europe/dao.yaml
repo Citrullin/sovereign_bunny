@@ -1,0 +1,34 @@
+address: "0x0000000000000000000000000000000000000102"
+entity_kind: "DAO"
+name: "European Sovereign DAO"
+region: "Europe"
+voting_weight_bps: 920
+did: "did:sovereign:1337:dao-europe"
+initial_balance: "0xa56fa5b99019a5c800000" # 20,000,000 TBL
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "europe-dao-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "europe-dao-rebac-v1"
+  - slot_id: 2
+    plugin_id: "core.native_payment"
+    commitment: "europe-dao-payment-v1"
+  - slot_id: 8
+    plugin_id: "dao.voting_weight"
+    commitment: "0x0000000000000000000000000000000000000000000000000000000000000398" # 920 bps in hex
+
+members:
+  - address: "0xa11ce00000000000000000000000000000000001"
+    role: "admin"
+    did: "did:sovereign:1337:alice-admin"
+    initial_balance: "0x21e19e0c9bab2400000" # 10,000 TBL
+    slots:
+      - slot_id: 0
+        plugin_id: "core.did_identity"
+        commitment: "citrullin-did-v1"
+      - slot_id: 1
+        plugin_id: "core.zanzibar"
+        commitment: "citrullin-rebac-v1"

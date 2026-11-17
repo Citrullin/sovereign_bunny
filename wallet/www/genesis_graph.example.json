@@ -1,0 +1,1642 @@
+{
+  "nodes": [
+    {
+      "id": "0x0000000000000000000000000000000000000205",
+      "label": "did:sovereign:1337:nz-mbie",
+      "type": "xroad_authority",
+      "address": "0x0000000000000000000000000000000000000205",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x018d23ab949a496ed2ca6f0393b6edaa16b6e956af888654da4e3ab0b76db530"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0xb49f35029cc7d1399f3aaeea6002aa29f4628e50b9588aec885d22186457695c"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x2f263090ee765ebf0b754956c783ef6a28d426ed18c496d92684638e89758ceb"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000107",
+      "label": "did:sovereign:1337:dao-asia",
+      "type": "global_dao",
+      "address": "0x0000000000000000000000000000000000000107",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x5267ac464bdfe773418405e10817e37757b1bfb34aefb99cd17e6bcdecbcd695"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "dao.voting_weight",
+          "commitment": "0x00000000000000000000000000000000000000000000000000000000000016a8"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0xb86ca5db698b704ec0f33135d120fbcfae2a2f946d5154d3c02c37bbc7456a6d"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000101",
+      "label": "did:sovereign:1337:dao-global-tinyblock",
+      "type": "global_dao",
+      "address": "0x0000000000000000000000000000000000000101",
+      "balance": "0x52b7d2dcc80cd2e4000000",
+      "slots": [
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x0000000000000000000000000000000000000101000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x86d3b31b76e55f1a1e7d5734c2d35a16be2ef46060bdeb43d2643a657f7a3a3d"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0xa74f433267f7c2cc1d9fb897ce6704956dd6c31d929c478071f6063b59909a67"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "dao.voting_weight",
+          "commitment": "0xb123a68962c0a1fda1002deb03047535e9d2ff30833d09f8d5f19fadbac36077"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000201",
+      "label": "did:sovereign:1337:bafin-de",
+      "type": "xroad_authority",
+      "address": "0x0000000000000000000000000000000000000201",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0xe78fe8920d19f4524cbc3ffcdd0803044dc9c689e34cd44ddb28b2fae4707e4e"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 9,
+          "pluginId": "authority.compliance_counter",
+          "commitment": "0x13bc8a016e7a681aef5909102a28783ba11bf38918995b025a8097204af5de14"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x97df47e136060ade0e0c330db60d9907be18c8231a519ca073c22de3ccbe4aef"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x609b062f40ece5d6b9a283d92e7651cd3c1ca7b70f40789a1e647d7525e37670"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000206",
+      "label": "did:sovereign:1337:india-meity",
+      "type": "xroad_authority",
+      "address": "0x0000000000000000000000000000000000000206",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xe9e59da805b8f206aa3edfa1b57ddc78be3b1c49ca5a3ee8c22757dc4fb892dd"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0xb4d033d5c40f4914f0412d3fb6bcd14547711bfea16845aaf521fadc5b2405b5"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0xb1268e10889a5f40a749f8cd9539499dbe597d87d65470e7640bae6c4b3f7b82"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000105",
+      "label": "did:sovereign:1337:dao-africa",
+      "type": "global_dao",
+      "address": "0x0000000000000000000000000000000000000105",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xd27f94069a90f8140b64f63cf8151e830b7870a23cc9360be45d16a486481bf7"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "dao.voting_weight",
+          "commitment": "0x00000000000000000000000000000000000000000000000000000000000006a4"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x1ffbc2a0bc033afcd18897ba8a6d81d8b8f7f15c3e72c272288f658d085d1153"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000207",
+      "label": "did:sovereign:1337:china-miit",
+      "type": "xroad_authority",
+      "address": "0x0000000000000000000000000000000000000207",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x93766d114c81f38d871722e02e6ca3bb57db03c6ed0687c5f78a4777907893a5"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x796d1ec92a229b5e6eba63a1bb76047081b39a69a2cc5c37d9df7a75a51243d8"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0xe6f7200fbb08eff40762acabd22ae971faab5ca816ac2c5c2195c8ab76e0dade"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000204",
+      "label": "did:sovereign:1337:kyrgyzstan-ufesd",
+      "type": "xroad_authority",
+      "address": "0x0000000000000000000000000000000000000204",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0xa787e5f1e944b9a1ada72c7ec1d727a1a8b5aea75dc75bc7ccf56db2e3073819"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xa84795106ea8c83e10275f1d7dcd100f4007f88d3b75f8acdd35395b5c5b5afe"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x9533b902c587b6bb0fe206b72e55450d90a1fee57f27fd381fa7c582dd4f9a73"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000104",
+      "label": "did:sovereign:1337:dao-south-america",
+      "type": "global_dao",
+      "address": "0x0000000000000000000000000000000000000104",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 8,
+          "pluginId": "dao.voting_weight",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000230"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xf62af1671b097eb05455c06b819089b7e3a8c5d052206724fbaaa9baaec72784"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x719c70298ce9c51f86dc8b0a3324dfed58431095c9ea109a7e48fa0846a621f6"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0xa11ce00000000000000000000000000000000001",
+      "label": "Account 0xa11ce00000000000000000000000000000000001",
+      "type": "human_account",
+      "address": "0xa11ce00000000000000000000000000000000001",
+      "balance": "0x21e19e0c9bab2400000",
+      "slots": [
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xb525a5d01b4b704015559e77bbade7d8459713bac16e112bf2ed5e743fc17c17"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x0fd803a8086aa9c973e1e686631d6465f0ab6893e867bf12cd2157acd03693bd"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0xf83822884aba4b87eb707c67e4c0b87918ceba72bff4a1eae35235669e6d8c43"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000102",
+      "label": "did:sovereign:1337:dao-europe",
+      "type": "global_dao",
+      "address": "0x0000000000000000000000000000000000000102",
+      "balance": "0xa56fa5b99019a5c800000",
+      "slots": [
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x0000000000000000000000000000000000000102000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0xb01cabab94c28fe0dcf7fa6742202f503d812f797d6a494a1f2cfcb11a206d5b"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "dao.voting_weight",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000398"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x835e962fb0c67d29be74eb511cab9b9dfa5bddcc21e2e67ebe6aa5f34da42e60"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000208",
+      "label": "did:sovereign:1337:asia-collab-enforcement",
+      "type": "collaborative_authority",
+      "address": "0x0000000000000000000000000000000000000208",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xfb8947848853ab4ea55912fcbec32f2c4cf508095a935e199ee85b22ceb949d7"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x7290aef37a79678c36c591d77870e140193ae322415ce6af19b36af59ce0ff14"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 9,
+          "pluginId": "authority.compliance_counter",
+          "commitment": "0x87d61fbc9e244fb40f004841d04dfaa6a1ff095b6428e43abd7498a2cb76db96"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000202",
+      "label": "did:sovereign:1337:eu-xroad-estonia",
+      "type": "xroad_authority",
+      "address": "0x0000000000000000000000000000000000000202",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x8a8f7cce9ba3fcf1029a84dc9e8c1bdb6bdcf8612dc3371380474133b4fe8afe"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0xd12342efeb4f3134f480c0ca0fa68144476c1e8a92518d7bb859ffa3bc93beb9"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x7cc1067550ff5aea8de3376675f8984e58227f63542fede527d6180af67c8fcc"
+        }
+      ]
+    },
+    {
+      "id": "0x0202020202020202020202020202020202020202",
+      "label": "Account 0x0202020202020202020202020202020202020202",
+      "type": "human_account",
+      "address": "0x0202020202020202020202020202020202020202",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xdd3d3c8f2dcbacbbe05c67a9e2186056d6ecb0d72def23f09b8ed4428646418f"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000401",
+      "label": "did:sovereign:1337:service-enterprise-ledger",
+      "type": "service_account",
+      "address": "0x0000000000000000000000000000000000000401",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0xad6fe4fce801e66ee637df62da606001d7c7fa6aa8285a61e502edfce6727131"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x0e225e410fc96454fe913bbf15f5a161c087587d6fd66685647596f7d29fb6d0"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xdd3d3c8f2dcbacbbe05c67a9e2186056d6ecb0d72def23f09b8ed4428646418f"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0xacab1dfb669a69638ac16c9676352661446292717345b2ba8bd4829f10bdd4e2"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0101010101010101010101010101010101010101",
+      "label": "core.precompile.router",
+      "type": "system_precompile",
+      "address": "0x0101010101010101010101010101010101010101",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xdd3d3c8f2dcbacbbe05c67a9e2186056d6ecb0d72def23f09b8ed4428646418f"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000203",
+      "label": "did:sovereign:1337:ghana-gra",
+      "type": "xroad_authority",
+      "address": "0x0000000000000000000000000000000000000203",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x2dfc17e9bd709b26b6d1ab7610d317603730efa3a915cac3d377207d39612940"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0xbdda8a1bec4d753a8b3eec6d4acb45b6f4509fa05b5bfafbddda8dfb31be22c6"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xddcf93e9c0e2ceac312a7cd028543b01c3602c44aacd42e131dc71dcf959339e"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000402",
+      "label": "did:sovereign:1337:service-nextcloud",
+      "type": "service_account",
+      "address": "0x0000000000000000000000000000000000000402",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x1d44b54a5711789faf1b480c2a5f0c9c2bc00f8ed91d4dd6c94263d2b99ae767"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xc273784c18f616bc076e9b88951697406a8299d3ee417b693a49868462413774"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x79a3f2a5d44dede6db22ab4ce08fdf41b76731e114726dbf8f32cb30e41142bd"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000403",
+      "label": "did:sovereign:1337:service-coder",
+      "type": "service_account",
+      "address": "0x0000000000000000000000000000000000000403",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x97a1fb99afff8ff925913b3c75ea76db1375585f7f8eeb3943201c254295be3e"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x9859f04baf7ee05c9bf6424111824f032e311e592770aa023eb1d5a2708ad458"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x2a9ba00b4911af69d81bfe5941222e2cc2c6d56252c4f9d5f4c304878222001e"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000013370002",
+      "label": "Contract 0x0000000000000000000000000000000013370002",
+      "type": "smart_contract",
+      "address": "0x0000000000000000000000000000000013370002",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xdd3d3c8f2dcbacbbe05c67a9e2186056d6ecb0d72def23f09b8ed4428646418f"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000013370001",
+      "label": "Contract 0x0000000000000000000000000000000013370001",
+      "type": "smart_contract",
+      "address": "0x0000000000000000000000000000000013370001",
+      "balance": "0xde0b6b3a7640000",
+      "slots": [
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xdd3d3c8f2dcbacbbe05c67a9e2186056d6ecb0d72def23f09b8ed4428646418f"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x22fe4f9089192704ab1bd2ab57c0cbe0a771265293f5b5b753da38d0650a8115"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000013370003",
+      "label": "Contract 0x0000000000000000000000000000000013370003",
+      "type": "smart_contract",
+      "address": "0x0000000000000000000000000000000013370003",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0xdd3d3c8f2dcbacbbe05c67a9e2186056d6ecb0d72def23f09b8ed4428646418f"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000108",
+      "label": "did:sovereign:1337:dao-oceania",
+      "type": "global_dao",
+      "address": "0x0000000000000000000000000000000000000108",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x24044e65ad4e53dcddccfdf2a4673ccbff8c2b35e4e4064f20b2bb7177891367"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x781f5c7197692184462a235454f474368f3349a83e4b3547a6b6f5d32118f082"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "dao.voting_weight",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000096"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000301",
+      "label": "did:sovereign:1337:repo-sovereign-bunny",
+      "type": "git_repo",
+      "address": "0x0000000000000000000000000000000000000301",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x386f3d87a3d334105e2a08f3b58429d517d408b17be6350693b6db675181539e"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x1ba6c7d3fcf9333697002a7cccf6a52e4fb3618fcd1d4dc682abcba20a19f9b6"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x8971dc3b98a6912cb7cd767e4592329309ed7c53590dc0c881dd1258bc1bc96a"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0xcd6fe2b4579c3773210d83e7c8e1757374c04341dd512f7e2cbfbb6a2170d4a3"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000106",
+      "label": "did:sovereign:1337:dao-central-asia",
+      "type": "global_dao",
+      "address": "0x0000000000000000000000000000000000000106",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x3a4ec3f436f36a065a5da74b72e102e768f3c70494f61be2c6c9e71ee2bd209a"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x4adf273de5c9a6fb238a6321d017e51aa7a244e1fa5bdf756cb61b48445f97fb"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "dao.voting_weight",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000078"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000302",
+      "label": "did:sovereign:1337:repo-bunny-stack",
+      "type": "git_repo",
+      "address": "0x0000000000000000000000000000000000000302",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x4e7cddc1bf94ef3130d8d27e155ef6280c09de19d9ba8214e892863ad6a040f3"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x96eb27691b52993810a0bcd7f6397dd9c4ca5fe8c114fd53772a877d5e72173e"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x0ccdcc5545d759712b42a69450404ffe52887afc42a3395e2b601475d4dcd48a"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 8,
+          "pluginId": "identity.lotl_root",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "0x0000000000000000000000000000000000000103",
+      "label": "did:sovereign:1337:dao-north-america",
+      "type": "global_dao",
+      "address": "0x0000000000000000000000000000000000000103",
+      "balance": "0x0",
+      "slots": [
+        {
+          "slotId": 8,
+          "pluginId": "dao.voting_weight",
+          "commitment": "0x00000000000000000000000000000000000000000000000000000000000002ee"
+        },
+        {
+          "slotId": 2,
+          "pluginId": "core.native_payment",
+          "commitment": "0x3cac317908c699fe873a7f6ee4e8cd63fbe9918b2315c97be91585590168e301"
+        },
+        {
+          "slotId": 3,
+          "pluginId": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 6,
+          "pluginId": "vcs.interface_contract",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 4,
+          "pluginId": "ext.sqldigest",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 5,
+          "pluginId": "authority.xroad_descriptor",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "slotId": 0,
+          "pluginId": "core.did_identity",
+          "commitment": "0x93ef6f7dbcf6cfe0668b8b5eda7d933504ea6e89aa72510796b2cc3094b5c297"
+        },
+        {
+          "slotId": 1,
+          "pluginId": "core.zanzibar",
+          "commitment": "0x378163e2254083b6ea0121ff539e10ccaa2ffb7fa8fb614ffb537cedc8f70ede"
+        },
+        {
+          "slotId": 7,
+          "pluginId": "reputation.merit",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "source": "0x0000000000000000000000000000000000000101",
+      "target": "0x0000000000000000000000000000000000000102",
+      "relation": "sub_dao_member",
+      "label": "Sub-DAO (Europe)"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000101",
+      "target": "0x0000000000000000000000000000000000000103",
+      "relation": "sub_dao_member",
+      "label": "Sub-DAO (North America)"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000101",
+      "target": "0x0000000000000000000000000000000000000104",
+      "relation": "sub_dao_member",
+      "label": "Sub-DAO (South America)"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000101",
+      "target": "0x0000000000000000000000000000000000000105",
+      "relation": "sub_dao_member",
+      "label": "Sub-DAO (Africa)"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000101",
+      "target": "0x0000000000000000000000000000000000000106",
+      "relation": "sub_dao_member",
+      "label": "Sub-DAO (Central Asia)"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000101",
+      "target": "0x0000000000000000000000000000000000000107",
+      "relation": "sub_dao_member",
+      "label": "Sub-DAO (Asia)"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000101",
+      "target": "0x0000000000000000000000000000000000000108",
+      "relation": "sub_dao_member",
+      "label": "Sub-DAO (Oceania)"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0xa11ce00000000000000000000000000000000001",
+      "relation": "admin",
+      "label": "DAO Admin"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000201",
+      "target": "0x0000000000000000000000000000000000000102",
+      "relation": "audit",
+      "label": "Financial Supervision"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000201",
+      "target": "0xa11ce00000000000000000000000000000000001",
+      "relation": "supervisor_of",
+      "label": "X-Road Supervisor"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000202",
+      "target": "0x0000000000000000000000000000000000000102",
+      "relation": "audit",
+      "label": "eIDAS LOTL Audit"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0x0000000000000000000000000000000000000301",
+      "relation": "repository",
+      "label": "Owned Repo"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0x0000000000000000000000000000000000000302",
+      "relation": "repository",
+      "label": "Owned Repo"
+    },
+    {
+      "source": "0xa11ce00000000000000000000000000000000001",
+      "target": "0x0000000000000000000000000000000000000301",
+      "relation": "maintainer",
+      "label": "Repo Maintainer"
+    },
+    {
+      "source": "0xa11ce00000000000000000000000000000000001",
+      "target": "0x0000000000000000000000000000000000000302",
+      "relation": "maintainer",
+      "label": "Repo Maintainer"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0x0000000000000000000000000000000000000401",
+      "relation": "service",
+      "label": "Enterprise ERP"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0x0000000000000000000000000000000000000402",
+      "relation": "service",
+      "label": "Nextcloud Storage"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0x0000000000000000000000000000000000000403",
+      "relation": "service",
+      "label": "Coder IDE"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000203",
+      "target": "0x0000000000000000000000000000000000000105",
+      "relation": "audit",
+      "label": "Tax & Revenue Audit"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000204",
+      "target": "0x0000000000000000000000000000000000000106",
+      "relation": "audit",
+      "label": "UFESD Supervision"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000205",
+      "target": "0x0000000000000000000000000000000000000108",
+      "relation": "audit",
+      "label": "MBIE Compliance"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000206",
+      "target": "0x0000000000000000000000000000000000000107",
+      "relation": "audit",
+      "label": "MeitY Regulatory Oversight"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000207",
+      "target": "0x0000000000000000000000000000000000000107",
+      "relation": "audit",
+      "label": "MIIT Regulatory Oversight"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000208",
+      "target": "0x0000000000000000000000000000000000000206",
+      "relation": "enforcer",
+      "label": "Collab Council"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000208",
+      "target": "0x0000000000000000000000000000000000000207",
+      "relation": "enforcer",
+      "label": "Collab Council"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0x0000000000000000000000000000000013370001",
+      "relation": "governs",
+      "label": "Global Paymaster"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0x0000000000000000000000000000000013370002",
+      "relation": "governs",
+      "label": "DAO Registry"
+    },
+    {
+      "source": "0x0000000000000000000000000000000000000102",
+      "target": "0x0000000000000000000000000000000013370003",
+      "relation": "governs",
+      "label": "Compliance Counter"
+    }
+  ]
+}

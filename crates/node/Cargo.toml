@@ -1,16 +1,18 @@
 [package]
 name = "sovereign-node"
+default-run = "sovereign-bunny"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
 
 [[bin]]
-name = "sovereign-reth"
+name = "sovereign-bunny"
 path = "src/main.rs"
 
 [[bin]]
-name = "did-cli"
-path = "src/did_cli.rs"
+name = "did-tool"
+path = "src/did_tool.rs"
 
 [dependencies]
 tokio = { workspace = true }
@@ -24,6 +26,7 @@ futures = { workspace = true }
 alloy-primitives = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }
 alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
 alloy-rlp = "0.3"
 k256 = { workspace = true }
 blake3 = { workspace = true }
@@ -31,6 +34,7 @@ bip39 = "2.0.0"
 bip32 = "0.5.1"
 alloy-signer-local = "2.1.1"
 alloy-network = "2.1.1"
+scale = { workspace = true }
 
 
 tiny-keccak = { workspace = true }
@@ -55,6 +59,7 @@ sovereign-attestation = { workspace = true }
 sovereign-identity = { workspace = true }
 sovereign-network = { workspace = true }
 sovereign-crypto = { path = "../crypto" }
+sovereign-ssz = { path = "../sovereign-ssz" }
 toml = { workspace = true }
 bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }

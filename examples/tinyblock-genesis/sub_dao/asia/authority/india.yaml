@@ -1,0 +1,36 @@
+address: "0x0000000000000000000000000000000000000206"
+entity_kind: "Authority"
+did: "did:sovereign:1337:india-meity"
+authority_jurisdiction: "India"
+authority_body: "MeitY (Ministry of Electronics and Information Technology)"
+authority_url: "https://www.meity.gov.in"
+regulatory_frameworks: ["DPDP-Act", "CERT-In-Directives"]
+
+xroad_member_code: "IN-MEITY-001"
+xroad_supervised_entity: null
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "india-meity-did-root-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "india-meity-rebac-v1"
+  - slot_id: 5
+    plugin_id: "authority.xroad_descriptor"
+    commitment: "india-meity-xroad-descriptor-v1"
+
+blind_note:
+  is_public: true
+  target_slot: 5
+  value: "0x0"
+  content_type: "xroad_descriptor"
+  payload:
+    member_class: "GOV_TECH"
+    member_code: "IN-MEITY-001"
+    subsystem_code: "NationalBlockchainGateway"
+    endpoint_url_hash: "keccak256(https://blockchain.meity.gov.in/)"
+    cert_fingerprint_sha256: "PLACEHOLDER_IN_MEITY_CERT_HASH"
+    protocol_version: "4.0"
+    granted_capabilities:
+      - "electronic_consent_verify"

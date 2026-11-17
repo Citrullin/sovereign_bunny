@@ -1,0 +1,15 @@
+target_account: "0x0000000000000000000000000000000000000204"
+target_slot: 5
+value: "0x0"
+is_public: true
+content_type: "xroad_descriptor"
+nullifier: "0x0000000000000000000000000000000000000000000000000000000000006901"
+secret: "0x0000000000000000000000000000000000000000000000000000000000006901"
+iroh_cid: "bafybeigkyrgyzstanpublicnote001"
+payload:
+  member_class: "FIN_SURVEILLANCE"
+  member_code: "KG-UFESD-001"
+  subsystem_code: "VirtualAssetsRegister"
+  endpoint_url_hash: "keccak256(https://fiu.gov.kg/)"
+  cert_fingerprint_sha256: "PLACEHOLDER_KG_UFESD_CERT_HASH"
+  protocol_version: "4.0"

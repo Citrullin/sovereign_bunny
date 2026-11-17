@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sovereign Wallet & local Asset Manager</title>
+    <style>
+        /* STYLE_CSS */
+    </style>
+</head>
+
+<body class="is-dark">
+    <!-- Onboarding Wizard (Reactive Lit Component / SRP) -->
+    <sovereign-onboarding-wizard id="sovereign-onboarding-wizard-component"></sovereign-onboarding-wizard>
+
+    <!-- Dedicated Unlock Keystore Modal (Reactive Lit Component / SRP) -->
+    <sovereign-unlock-modal id="sovereign-unlock-modal-component"></sovereign-unlock-modal>
+
+
+
+    <!-- Reactive Lit Dialog Component (SRP) -->
+    <sovereign-app-dialog id="app-dialog-component"></sovereign-app-dialog>
+
+    <div class="container">
+        <!-- Top Bar: Encapsulated Reactive Lit Component (SRP) -->
+        <sovereign-header-bar id="sovereign-header-bar-component"></sovereign-header-bar>
+
+
+        <!-- Full-Width Horizontal Navigation Deck (Reactive Lit Component / SRP) -->
+        <sovereign-navigation-bar id="sovereign-navigation-bar-component"></sovereign-navigation-bar>
+
+        <!-- Insecure Account Warning Banner -->
+        <div id="legacy-warning-banner" style="display: none; background: linear-gradient(90deg, #b35900 0%, #990000 100%); color: #fff; padding: 10px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 0.75rem; border: 2px solid #ff5555; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <span>⚠️ <b>NON POST-QUANTUM SECURE ACCOUNT:</b> This address has <code>ALLOW_LEGACY=true</code>. Classical ECDSA signatures can be cracked by quantum computers.</span>
+                </div>
+                <button id="banner-upgrade-pq-btn" class="nes-btn is-warning" style="padding: 4px 10px; font-size: 0.65rem;">🛡️ Upgrade to Quantum Secure</button>
+            </div>
+        </div>
+
+        <!-- Encapsulated Reactive Sovereign Modals -->
+        <sovereign-pq-sign-modal id="sovereign-pq-sign-modal-component"></sovereign-pq-sign-modal>
+        <sovereign-tx-details-modal id="sovereign-tx-details-modal-component"></sovereign-tx-details-modal>
+        <sovereign-commitment-modal id="sovereign-commitment-modal-component"></sovereign-commitment-modal>
+
+        <!-- Encapsulated Reactive Sovereign Modals (SRP) -->
+        <sovereign-reveal-key-modal id="sovereign-reveal-key-modal-component"></sovereign-reveal-key-modal>
+        <sovereign-settings-modal id="sovereign-settings-modal-component"></sovereign-settings-modal>
+
+        <!-- TAB 1: Profile & Identity -->
+        <div id="tab-profile" class="tab-pane active">
+            <div class="page-hero-header">
+                <div>
+                    <h2>👤 Sovereign Identity & zkOIDC Profile</h2>
+                    <p>Post-Quantum DID Registry (Slot 0x03), zero-knowledge compliance tickets & deterministic identity keys.</p>
+                </div>
+                <div id="profile-page-status" class="slot-status-container">
+                    <span class="nes-badge"><span class="is-disabled" id="profile-slot-badge">Slot 0x03 Unmounted</span></span>
+                    <span class="slot-root-link" id="profile-slot-root-link">Tip: <a href="#explorer" id="profile-slot-root-a">0x0 (Unmounted)</a> <span class="slot-update-count" id="profile-slot-count">(0 updates)</span></span>
+                </div>
+            </div>
+
+            <!-- 2. Account Overview -->
+            <div class="nes-container with-title is-dark" id="overview" style="margin-bottom: 20px;">
+                <p class="title">👤 Identity & zkOIDC Profile</p>
+                <div style="font-size: 0.7rem;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="color: #ff0;">DID URI:</label>
+                        <div id="did-display"
+                            style="word-break: break-all; background: #000; padding: 10px; border: 2px solid #fff;">
+                            Uninitialized</div>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="color: #ff0;">WebFinger Handle:</label>
+                        <div id="webfinger-display"
+                            style="word-break: break-all; background: #000; padding: 8px; border: 2px solid #66fcf1; color: #66fcf1;">
+                            @user@manifold.mesh</div>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="color: #ff0;">Primary EVM:</label>
+                        <div id="addr-display"
+                            style="word-break: break-all; background: #000; padding: 10px; border: 2px solid #fff;">
+                            Uninitialized</div>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="color: #ff0;">Sovereign RPC Endpoint:</label>
+                        <input type="text" id="overview-rpc-endpoint-input" class="nes-input is-dark"
+                            value="/rpc" style="font-size: 0.65rem; padding: 5px 10px;">
+                    </div>
+                    <div
+                        style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Merit Rank:</span>
+                        <span id="rank-badge" class="nes-badge"><span class="is-warning">Rank 0</span></span>
+                    </div>
+                    <div
+                        style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Key Tier:</span>
+                        <span id="tier-display" class="nes-badge"><span class="is-success">Classical</span></span>
+                    </div>
+                    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; background: #111; padding: 6px 10px; border: 1px solid #444;">
+                        <span style="color: #ff0;">Settled Lattice Balance:</span>
+                        <div style="text-align: right;">
+                            <span id="lattice-balance-display" style="color: #ffffff; font-weight: bold; font-size: 0.75rem;">0.00 TBL</span>
+                            <span id="lattice-superposition-display" style="display: none; margin-left: 6px; color: #888888; font-size: 0.7rem; font-weight: normal;">
+                                (<span id="lattice-superposition-amount">+0.00 TBL</span> 
+                                <span style="cursor: help; color: #aaa; text-decoration: underline; font-style: italic;" title="Funds in superposition: These incoming blind note transfers are un-collapsed and in cryptographic superposition until your account signs an update to advance its state tip.">?</span>)
+                            </span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
+                        <label for="public-did-lookup-addr" style="font-size: 0.65rem; color: #ff0;">🔍 Request / Lookup Public DID (Stateless RPC / Iroh):</label>
+                        <div style="display: flex; gap: 8px; margin-top: 5px;">
+                            <input type="text" id="public-did-lookup-addr" class="nes-input is-dark" placeholder="0x... or did:sovereign:..." style="font-size: 0.65rem; flex: 1;">
+                            <button class="nes-btn is-primary" id="public-did-lookup-btn" style="font-size: 0.65rem; white-space: nowrap;">Fetch DID</button>
+                        </div>
+                        <div id="public-did-lookup-result" style="display: none; margin-top: 8px; background: #000; padding: 8px; border: 1px solid #666; font-size: 0.6rem; max-height: 140px; overflow-y: auto; color: #66fcf1; word-break: break-all;"></div>
+                    </div>
+                    <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px;">
+                        <button class="nes-btn is-error" id="register-did-btn">🌐 Register DID on Chain (0x03)</button>
+                        <!-- Map zkOIDC to SIWE Session (pending full implementation & testing)
+                        <button class="nes-btn is-primary" id="zkoidc-siwe-btn">🔑 Map zkOIDC to SIWE Session</button>
+                        <div id="zkoidc-result" style="display: none; background: #0b132b; padding: 8px; font-size: 0.6rem; color: #66fcf1; border: 1px solid #1c2541;"></div>
+                        -->
+                        <button class="nes-btn is-success" id="export-backup-btn" disabled style="display: none;">📥 Export Keystore (File API)</button>
+                        <button class="nes-btn is-warning" id="import-keys-btn">🔑 Import Private Keys / Keystore</button>
+                        <button class="nes-btn is-error" id="reset-profiles-btn" onclick="clearLocalProfiles()">⚠️ Reset Local Profiles</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Jurisdiction Configuration -->
+            <div class="nes-container with-title is-dark" id="jurisdiction-container" style="margin-bottom: 20px;">
+                <p class="title">⚖️ Ephemeral Ingress ZK-Compliance</p>
+                <div style="font-size: 0.7rem;">
+                    <p style="font-size: 0.65rem; color: #ff0; margin-bottom: 10px;">Ephemeral SMT non-inclusion ticket (Zero On-Chain Taint):</p>
+                    
+                    <div class="nes-field" style="margin-bottom: 12px;">
+                        <label for="jurisdiction-region-select" style="font-size: 0.65rem; color: #ff0;">Jurisdiction Authority / ISO Region:</label>
+                        <div id="jurisdiction-options">
+                            <div class="nes-select is-dark" style="margin-top: 5px; margin-bottom: 10px;">
+                                <select id="jurisdiction-region-select" style="font-size: 0.65rem;">
+                                    <option value="2_4" selected>Region: Switzerland (CH - Non-Sanctioned)</option>
+                                    <option value="2_3">Region: European Union (EU - MiCA/FinFRG)</option>
+                                    <option value="2_2">Region: United States (US - Reg D Accredited)</option>
+                                    <option value="2_5">Region: Cayman Islands (KY - Exempt)</option>
+                                    <option value="none">None / Neutral Jurisdiction</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="nes-field" style="margin-bottom: 12px;">
+                        <label for="compliance-ticket-input" style="font-size: 0.65rem; color: #ff0;">Ephemeral SMT Non-Inclusion Ticket (Hash / Proof):</label>
+                        <input type="text" id="compliance-ticket-input" class="nes-input is-dark" placeholder="0x... (32-byte Poseidon / Noir Non-Inclusion Root)" value="" style="font-size: 0.65rem;">
+                    </div>
+
+                    <div class="nes-field" style="margin-bottom: 15px;">
+                        <label for="compliance-smt-root-input" style="font-size: 0.65rem; color: #ff0;">Validator Sanctions SMT Root (Epoch Exclusion Vector):</label>
+                        <input type="text" id="compliance-smt-root-input" class="nes-input is-dark" placeholder="0x... (Vector SMT Exclusion Root for Active Epoch)" value="" style="font-size: 0.65rem;">
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button type="button" class="nes-btn is-warning" id="generate-compliance-ticket-btn" style="flex: 1; font-size: 0.7rem;">⚡ Generate Local Ticket</button>
+                        <button type="button" class="nes-btn is-primary" id="update-jurisdiction-btn" style="flex: 1; font-size: 0.7rem;">⚖️ Set Ingress Compliance Ticket</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: Fediverse & ActivityPub Outbox -->
+        <div id="tab-activitypub" class="tab-pane">
+            <div class="page-hero-header">
+                <div>
+                    <h2>🌌 Fediverse & ActivityPub Outbox</h2>
+                    <p>Decentralized W3C ActivityPub Actor (Slot 0x05 / CMS 0xF1) federated with Mastodon, Lemmy & Firefish.</p>
+                </div>
+                <div id="ap-page-status" class="slot-status-container">
+                    <span class="nes-badge"><span class="is-disabled" id="ap-slot-badge">Slot 0x05 Unmounted</span></span>
+                    <span class="slot-root-link" id="ap-slot-root-link">Tip: <a href="#explorer" id="ap-slot-root-a">0x0 (Unmounted)</a> <span class="slot-update-count" id="ap-slot-count">(0 updates)</span></span>
+                </div>
+            </div>
+
+            <!-- Mastodon & Fediverse Federation Gateway -->
+            <div class="nes-container with-title is-dark" style="margin-bottom: 20px; border: 2px solid #209cee;">
+                <p class="title" style="color: #209cee;">📡 Fediverse & Mastodon Federation Gateway</p>
+                <div style="font-size: 0.7rem;">
+                    <p style="font-size: 0.65rem; color: #ddd; line-height: 1.5; margin-bottom: 10px;">
+                        Every Sovereign account functions as a decentralized W3C ActivityStreams 2.0 Actor. Any Mastodon, Lemmy, or Firefish instance can follow your on-chain outbox without centralized relays.
+                    </p>
+                    <div style="background: #111; padding: 10px; border: 1px solid #444; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                        <div>
+                            <span style="color: #ff0; font-size: 0.65rem;">Follow Handle for Mastodon / Fediverse:</span><br>
+                            <code id="ap-mastodon-handle" style="color: #66fcf1; font-size: 0.75rem; word-break: break-all;">@user@manifold.mesh</code>
+                        </div>
+                        <button class="nes-btn is-primary" id="copy-ap-handle-btn" style="padding: 3px 8px; font-size: 0.6rem;">📋 Copy Handle</button>
+                    </div>
+                    <span style="color: #aaa; font-size: 0.6rem;">
+                        💡 How it works: Posts are signed with your Post-Quantum keys on Account-Lattice slot <code>0xF1</code>, blob media is pinned via Iroh decentralized storage, and external gateways resolve you via WebFinger.
+                    </span>
+                </div>
+            </div>
+
+            <!-- ActivityPub Outbox Composer -->
+            <div class="nes-container with-title is-dark" id="activitypub" style="margin-bottom: 20px;">
+                <p class="title">🌌 Fediverse & ActivityPub Outbox</p>
+                <div style="font-size: 0.7rem;">
+                    <div style="margin-bottom: 12px; padding: 8px; background: #111; border: 1px solid #444; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="color: #ff0;">ActivityPub Slot (0x05):</span>
+                            <span id="ap-slot-status-badge" style="color: #f7d51d; margin-left: 6px;">Unchecked</span>
+                        </div>
+                        <button class="nes-btn is-warning" id="bootstrap-ap-slot-btn" style="padding: 2px 8px; font-size: 0.6rem;">⚙️ Mount Slot 0x05</button>
+                    </div>
+                    <p style="font-size: 0.65rem; color: #ff0;">Federate W3C ActivityStreams 2.0 via Account-Lattice Outbox (0xF1):</p>
+                    <div class="nes-field" style="margin-bottom: 10px;">
+                        <label for="ap-content-input">Post Content / Note:</label>
+                        <textarea id="ap-content-input" class="nes-textarea is-dark" style="font-size: 0.65rem;" placeholder="Hello Fediverse from Sovereign Account-Lattice!"></textarea>
+                    </div>
+                    <div class="nes-field" style="margin-bottom: 5px;">
+                        <label for="ap-media-file">Attach Media for this Post (Optional):</label>
+                        <input type="file" id="ap-media-file" class="nes-input is-dark" style="font-size: 0.65rem;">
+                    </div>
+                    <div class="nes-field" style="margin-bottom: 10px;">
+                        <label for="ap-media-cid">Attached Iroh Media CID (or paste existing):</label>
+                        <input type="text" id="ap-media-cid" class="nes-input is-dark" placeholder="b3:0123456789abcdef..." style="font-size: 0.65rem;">
+                    </div>
+                    <div class="nes-field" style="margin-bottom: 10px;">
+                        <label for="ap-tip-input">Attached Micro-Payment (Atomic Units):</label>
+                        <input type="number" id="ap-tip-input" class="nes-input is-dark" value="0" style="font-size: 0.65rem;">
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: flex-end;">
+                        <div class="nes-field" style="flex: 1;">
+                            <label for="ap-pin-duration">📌 Iroh Pinning Lease:</label>
+                            <div class="nes-select is-dark">
+                                <select id="ap-pin-duration" style="font-size: 0.65rem; padding: 4px 6px;">
+                                    <option value="1">1 Year (0.01 TBL / MB)</option>
+                                    <option value="2">2 Years (0.02 TBL / MB)</option>
+                                    <option value="5" selected>5 Years (0.05 TBL / MB)</option>
+                                    <option value="10">10 Years (0.10 TBL / MB)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="flex: 1; font-size: 0.6rem; color: #ffcc00; padding-bottom: 6px;" id="ap-pin-fee-display">
+                            Est. Pinning Fee: ~0.0005 TBL
+                        </div>
+                    </div>
+                    <button class="nes-btn is-primary" id="publish-activitypub-btn" style="width: 100%; font-size: 0.7rem;">🚀 Sign & Publish ActivityPub Note (0xF1)</button>
+                    <div id="ap-status-log" style="margin-top: 10px; background: #000; padding: 8px; font-size: 0.6rem; color: #92cc41; max-height: 120px; overflow-y: auto; border: 1px solid #444;">
+                        Outbox ready.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Published Feed -->
+            <div class="nes-container with-title is-dark" style="margin-bottom: 20px;">
+                <p class="title">📜 Published Outbox Feed</p>
+                <div id="ap-feed-container" style="display: flex; flex-direction: column; gap: 8px; font-size: 0.65rem;">
+                    <p style="color: #888;">No notes published for this address yet.</p>
+                </div>
+            </div>
+
+            <!-- Discover & Read Address Feed -->
+            <div class="nes-container with-title is-dark" style="margin-bottom: 20px; border: 2px solid #209cee;">
+                <p class="title" style="color: #209cee;">🔍 Read Address Feed & Subscribe (Slot 0x54)</p>
+                <div style="font-size: 0.7rem;">
+                    <p style="font-size: 0.65rem; color: #ff0;">Read any account's ActivityPub feed directly from the decentralized lattice:</p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 10px; align-items: stretch;">
+                        <input type="text" id="ap-search-addr-input" class="nes-input is-dark" placeholder="Enter 0x... address or DID" style="flex: 3; font-size: 0.65rem; height: 44px; box-sizing: border-box;">
+                        <button class="nes-btn is-primary" id="ap-search-addr-btn" style="flex: 1; font-size: 0.65rem; height: 44px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;">📖 Read Feed</button>
+                        <button class="nes-btn is-warning" id="ap-subscribe-addr-btn" style="flex: 1; font-size: 0.65rem; height: 44px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;">📡 Subscribe</button>
+                    </div>
+                    <div id="ap-search-feed-container" style="display: flex; flex-direction: column; gap: 6px; font-size: 0.65rem;">
+                        <p style="color: #888;">Enter an address above or click any actor link to inspect their outbox.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global Network Timeline Feed -->
+            <div class="nes-container with-title is-dark" style="margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <p class="title" style="margin: 0;">🌐 Decentralized Mesh Activity Timeline</p>
+                    <button class="nes-btn" id="ap-refresh-network-btn" style="padding: 2px 6px; font-size: 0.6rem;">🔄 Refresh Network Feed</button>
+                </div>
+                <div id="ap-network-feed-container" style="display: flex; flex-direction: column; gap: 6px; font-size: 0.65rem;">
+                    <p style="color: #888;">Loading network timeline...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: Account-Lattice Explorer & History -->
+        <div id="tab-explorer" class="tab-pane">
+            <div class="page-hero-header">
+                <div>
+                    <h2>⛓️ Account-Lattice Ledger Explorer</h2>
+                    <p>Real-time micro-chain ledger, thread heights, async settlement inbox & configurable reclaim timelocks.</p>
+                </div>
+                <div id="explorer-page-status" class="slot-status-container">
+                    <span class="nes-badge"><span class="is-disabled" id="explorer-slot-badge">Slot 0x0100 Unmounted</span></span>
+                    <span class="slot-root-link" id="explorer-slot-root-link">Tip: <a href="#explorer" id="explorer-slot-root-a">0x0 (Unmounted)</a> <span class="slot-update-count" id="explorer-slot-count">(0 updates)</span></span>
+                </div>
+            </div>
+            <!-- Lattice Status Metrics -->
+            <div class="nes-container with-title is-dark" style="margin-bottom: 20px; border: 2px solid #f7d51d;">
+                <p class="title" style="color: #f7d51d;">⛓️ Sovereign Account-Lattice Metrics</p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; font-size: 0.7rem;">
+                    <div style="background: #111; padding: 10px; border: 1px solid #333;">
+                        <span style="color: #888; font-size: 0.6rem;">Account Height (0x100):</span><br>
+                        <span id="explorer-lattice-height" style="color: #66fcf1; font-size: 1.1rem; font-weight: bold;">0</span>
+                    </div>
+                    <div style="background: #111; padding: 10px; border: 1px solid #333;">
+                        <span style="color: #888; font-size: 0.6rem;">Consensus Epoch:</span><br>
+                        <span id="explorer-current-epoch" style="color: #92cc41; font-size: 1.1rem; font-weight: bold;">Epoch 1</span>
+                    </div>
+                    <div style="background: #111; padding: 10px; border: 1px solid #333;">
+                        <span style="color: #888; font-size: 0.6rem;">Auto-Reclaim Timeout:</span><br>
+                        <span id="explorer-reclaim-timeout" style="color: #f7d51d; font-size: 1.1rem; font-weight: bold;">20 Epochs</span>
+                    </div>
+                    <div style="background: #111; padding: 10px; border: 1px solid #333;">
+                        <span style="color: #888; font-size: 0.6rem;">Consensus Model:</span><br>
+                        <span id="explorer-consensus-model" style="color: #fff; font-size: 0.75rem;">Rotating Paxos over Snowman BFT</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Zero-Knowledge Public Explorer & Aggregate Telemetry -->
+            <div style="margin-bottom: 20px;">
+                <public-explorer id="sovereign-public-explorer" rpc-url="/rpc"></public-explorer>
+            </div>
+
+            <!-- Block-Lattice Update Inbox (Superposition State) -->
+            <div class="nes-container with-title is-dark" id="inbox-container" style="margin-bottom: 20px;">
+                <p class="title">📥 Update Inbox (Pending State Changes in Superposition)</p>
+                <div style="font-size: 0.7rem;">
+                    <p style="font-size: 0.65rem; color: #ff0;">Incoming blind note state transitions in superposition awaiting your signed tip update (Precompile <code>0x02</code>):</p>
+                    <div id="inbox-list" style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+                        <p style="font-size: 0.65rem; color: #aaa;">No pending state updates detected.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Blind Note Vault & Genesis Studio (Precompile 0x65 Absorb & Commit) -->
+            <div class="nes-container with-title is-dark" id="blind-note-container" style="margin-bottom: 20px;">
+                <p class="title">🔐 Blind Note Vault & Genesis Studio (0x65)</p>
+                <div style="font-size: 0.7rem;">
+                    <p style="font-size: 0.65rem; color: #66fcf1;">Absorb unspent blind notes into your account register or import genesis network vouchers:</p>
+                    <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                        <input type="text" id="absorb-nullifier-input" class="nes-input is-dark" placeholder="Nullifier (0x... 32-byte hex)" style="font-size: 0.65rem;">
+                        <div style="display: flex; gap: 8px;">
+                            <input type="number" id="absorb-slot-input" class="nes-input is-dark" placeholder="Target Slot (default: 2 for Native Payment)" value="2" min="0" max="63" style="font-size: 0.65rem; flex: 1;">
+                            <input type="text" id="absorb-proof-input" class="nes-input is-dark" placeholder="ZK Proof (hex, e.g. 0x01)" value="0x01" style="font-size: 0.65rem; flex: 2;">
+                        </div>
+                        <button class="nes-btn is-primary" id="absorb-note-btn" style="font-size: 0.65rem;" onclick="window.absorbBlindNote()">⚡ Absorb Blind Note (Zero-Gas Settlement)</button>
+                    </div>
+
+                    <div style="margin-top: 15px; border-top: 1px dashed #444; padding-top: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <p style="font-size: 0.65rem; color: #ffcc00; margin: 0;">📜 Genesis Allocation Studio & Vouchers</p>
+                            <label class="nes-btn is-warning" style="font-size: 0.6rem; padding: 2px 8px; margin: 0; cursor: pointer;">
+                                📂 Import Voucher JSON
+                                <input type="file" id="genesis-voucher-file-input" accept=".json" style="display: none;" onchange="window.handleGenesisVoucherFile(event)">
+                            </label>
+                        </div>
+                        <p style="font-size: 0.6rem; color: #aaa; margin-top: 4px;">Import <code>genesis_vouchers.json</code> generated during genesis graph compilation to claim allocations.</p>
+                        <div id="genesis-vouchers-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Outbound Send & Reclaim Manager -->
+            <div class="nes-container with-title is-dark" id="outbound-reclaim-container" style="margin-bottom: 20px;">
+                <p class="title">🔄 Outbound Sends & Reclaim Manager</p>
+                <div style="font-size: 0.7rem;">
+                    <p style="font-size: 0.65rem; color: #ff0;">Uncollected sends you dispatched. Reclaim funds if the recipient has not settled before the epoch timelock expires:</p>
+                    <div id="reclaim-sends-list" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                        <p style="font-size: 0.65rem; color: #aaa;">No active outbound sends pending reclaim.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NFC Hardware Tag & ZK-Proof Programmer -->
+            <div class="nes-container with-title is-dark" id="nfc-tag-container" style="margin-bottom: 20px;">
+                <p class="title">📱 NFC Hardware Tag & ZK-Proof Writer</p>
+                <div style="font-size: 0.7rem;">
+                    <p style="font-size: 0.65rem; color: #ddd; margin-bottom: 8px;">
+                        Program off-the-shelf NFC tags (NTAG216 / NTAG 424 DNA) with pre-computed Groth16 state ladders (Model 1 Bounded Debit) or physical authentication triggers (Model 2 BLE/Iroh).
+                    </p>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
+                        <button class="nes-btn is-primary" id="nfc-write-ladder-btn" style="font-size: 0.65rem;" onclick="window.writeNfcStateLadder()">📲 Write ZK State Ladder (Model 1)</button>
+                        <button class="nes-btn is-warning" id="nfc-write-auth-btn" style="font-size: 0.65rem;" onclick="window.writeNfcAuthTrigger()">🔑 Write Auth Trigger (Model 2)</button>
+                        <button class="nes-btn is-success" id="nfc-read-tag-btn" style="font-size: 0.65rem;" onclick="window.readNfcTag()">📡 Read / Scan Tag</button>
+                    </div>
+                    <div id="nfc-status-box" style="display: none; background: #000; padding: 8px; border: 1px solid #444; font-size: 0.6rem; color: #66fcf1; word-break: break-all;"></div>
+                </div>
+            </div>
+
+            <!-- Account-Lattice Transaction History & Block Explorer -->
+            <div class="nes-container with-title is-dark" id="explorer-history-container" style="margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                    <p class="title" style="margin: 0;">📜 Account-Lattice Transaction Log</p>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="nes-btn is-primary tx-filter-btn" id="explorer-filter-all" data-filter="all" style="padding: 2px 6px; font-size: 0.6rem;">My Account</button>
+                        <button class="nes-btn tx-filter-btn" id="explorer-filter-transfers" data-filter="transfers" style="padding: 2px 6px; font-size: 0.6rem;">Transfers</button>
+                        <button class="nes-btn tx-filter-btn" id="explorer-filter-precompiles" data-filter="precompiles" style="padding: 2px 6px; font-size: 0.6rem;">Precompiles</button>
+                        <button class="nes-btn is-warning tx-filter-btn" id="explorer-filter-network" data-filter="network" style="padding: 2px 6px; font-size: 0.6rem;" title="View all settled transactions across the entire network">🌐 All Network</button>
+                        <button class="nes-btn tx-refresh-btn" id="explorer-refresh-btn" style="padding: 2px 6px; font-size: 0.6rem;">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="explorer-table" id="explorer-tx-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Block / Tx Hash</th>
+                                <th>Counterparty / Slot</th>
+                                <th>Amount / Detail</th>
+                                <th>Epoch / Time</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="explorer-tx-tbody" class="account-tx-tbody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Interactive Graph & Regulatory Authority Explorer -->
+            <div class="nes-container with-title is-dark" id="graph-explorer-section" style="margin-bottom: 20px; border: 2px solid #9d4edd;">
+                <p class="title" style="color: #9d4edd;">🌐 Decentralized Graph Topology & Regulatory Authorities</p>
+                <div style="font-size: 0.65rem; color: #94a3b8; margin-bottom: 12px;">
+                    Interactive topology of Sovereign DAOs (Slot 8), Git commit object trees (Slot 3), Microservice SQL schemas (Slot 4), and Slot 5 X-Road Regulatory Authorities (eIDAS / BaFin).
+                </div>
+                <graph-explorer id="sovereign-graph-explorer"></graph-explorer>
+            </div>
+
+            <!-- Zodiac Safe DAO & Stateless Zanzibar ReBAC (Precompile 0x61 & 0x53) -->
+            <zodiac-dao-panel id="zodiac-dao-explorer-panel"></zodiac-dao-panel>
+        </div>
+
+        <!-- TAB 4: Sagas NFT Market & Owned Assets -->
+        <div id="tab-market" class="tab-pane">
+            <div class="page-hero-header">
+                <div>
+                    <h2>🖼️ Intent Commerce & Asset Gallery</h2>
+                    <p>Cross-chain multi-token settlement via Sagas (Arbitrum ETH, Base USDC, Gnosis EURe) & Web NFC e-Paper flasher.</p>
+                </div>
+                <div id="market-page-status" class="slot-status-container">
+                    <span class="nes-badge"><span class="is-disabled" id="market-slot-badge">Slot 0x04 Unmounted</span></span>
+                    <span class="slot-root-link" id="market-slot-root-link">Tip: <a href="#explorer" id="market-slot-root-a">0x0 (Unmounted)</a> <span class="slot-update-count" id="market-slot-count">(0 updates)</span></span>
+                </div>
+            </div>
+            <!-- 3. Catalog / Marketplace -->
+            <div class="nes-container with-title is-dark" id="catalog" style="margin-bottom: 20px;">
+                <p class="title">🛒 NFT Intent Marketplace</p>
+                <p style="font-size: 0.75rem;">Observe live rates and buy directly using Arbitrum ETH, Base USDC, or Gnosis EURe sagas.</p>
+                <div class="nft-grid" id="catalog-list" style="margin-top: 20px;">
+                    <!-- Dynamic Catalog Items -->
+                </div>
+            </div>
+
+            <!-- 4. Owned Assets & NFC writer -->
+            <section id="assets" class="nes-container with-title is-dark" style="margin-top: 20px;">
+                <p class="title">🖼️ My Owned Assets & e-Paper Flasher</p>
+                <p style="font-size: 0.75rem;">Manage locally owned NFTs, download e-paper image frames, or flash to epaper displays via Web NFC.</p>
+                <div class="nft-grid" id="owned-list" style="margin-top: 20px;">
+                    <!-- Dynamic Owned Items -->
+                </div>
+            </section>
+        </div>
+
+        <!-- TAB: Terminal Telemetry Data Moat & Privacy Tiers -->
+        <div id="tab-telemetry" class="tab-pane">
+            <div class="page-hero-header">
+                <div>
+                    <h2>📡 Sovereign Terminal</h2>
+                    <p>Real-time telemetry, market emission tiers (Subsidized, Quantized, Sovereign Dark), ZK lineage, and embedded explorer ledger.</p>
+                </div>
+            </div>
+            <sovereign-telemetry-panel id="sovereign-telemetry-panel-component"></sovereign-telemetry-panel>
+        </div>
+
+        <!-- TAB: Contextual DAO Governance & Voting -->
+        <div id="tab-governance" class="tab-pane">
+            <div class="page-hero-header">
+                <div>
+                    <h2>🏛️ Sovereign Governance & DAO Voting</h2>
+                    <p>Contextual proposal feeds filtered by Zanzibar ReBAC membership, Merit-gated ballots, and 1-Human-1-Vote / Capital-Weighted execution.</p>
+                </div>
+            </div>
+            <sovereign-governance-panel id="sovereign-governance-panel-component"></sovereign-governance-panel>
+        </div>
+
+        <!-- TAB 5: Storage & Advanced Protocols -->
+        <div id="tab-storage" class="tab-pane">
+            <div class="page-hero-header">
+                <div>
+                    <h2>💾 Decentralized Storage & Multi-Dialects</h2>
+                    <p>Iroh BLAKE3 Bao outboards, Space and Time SQL/Document engines, ZK-Merit & Zanzibar ReBAC (0x61).</p>
+                </div>
+                <div id="storage-page-status" class="slot-status-container">
+                    <span class="nes-badge"><span class="is-disabled" id="storage-slot-badge">Slot 0x53 / 0x07 Unmounted</span></span>
+                    <span class="slot-root-link" id="storage-slot-root-link">Tip: <a href="#explorer" id="storage-slot-root-a">0x0 (Unmounted)</a> <span class="slot-update-count" id="storage-slot-count">(0 updates)</span></span>
+                </div>
+            </div>
+            <!-- Encapsulated Reactive Sovereign Storage Panel (SRP) -->
+            <sovereign-storage-panel id="sovereign-storage-panel-component"></sovereign-storage-panel>
+        </div>
+
+        <!-- TAB 6: Sovereign Transaction & State-Change Debugger -->
+        <div id="tab-debugger" class="tab-pane">
+            <div class="page-hero-header">
+                <div>
+                    <h2>🐞 Bytecode Debugger & Quantum Dispatcher</h2>
+                    <p>Live calldata analysis, EIP-8141 post-quantum envelope un-wrapping, one-click execution & state wizards.</p>
+                </div>
+                <div id="dbg-page-status" class="slot-status-container">
+                    <span class="nes-badge"><span class="is-disabled" id="dbg-slot-badge">Slot 0x01 / 0x02 Unmounted</span></span>
+                    <span class="slot-root-link" id="dbg-slot-root-link">Tip: <a href="#explorer" id="dbg-slot-root-a">0x0 (Unmounted)</a> <span class="slot-update-count" id="dbg-slot-count">(0 updates)</span></span>
+                </div>
+            </div>
+
+            <sovereign-debugger id="sovereign-debugger-component"></sovereign-debugger>
+        </div>
+    </div>
+
+    <!-- Reactive NFT Checkout Modal (SRP) -->
+    <sovereign-checkout-modal id="sovereign-checkout-modal-component"></sovereign-checkout-modal>
+
+    <script>
+        /* APP_JS */
+    </script>
+</body>
+
+</html>

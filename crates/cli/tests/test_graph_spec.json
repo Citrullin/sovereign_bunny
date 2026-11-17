@@ -1,0 +1,41 @@
+{
+  "network_name": "Sovereign Bunny Enterprise",
+  "chain_id": 1337,
+  "ticker": "TBL",
+  "accounts": [
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "entity_kind": "DAO",
+      "initial_balance": "1000000000000000000000",
+      "did": "did:sovereign:1337:genesis-dao",
+      "slots": [
+        {
+          "slot_id": 1,
+          "plugin_id": "core.zanzibar",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ]
+    },
+    {
+      "address": "0x2222222222222222222222222222222222222222",
+      "entity_kind": "GitRepo",
+      "initial_balance": "0",
+      "did": "did:sovereign:1337:repo-kernel",
+      "slots": [
+        {
+          "slot_id": 3,
+          "plugin_id": "vcs.git_dag",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000003"
+        }
+      ]
+    }
+  ],
+  "rebac_tuples": [
+    {
+      "namespace": 1,
+      "object_id": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "relation": 1,
+      "subject": "did:sovereign:1337:genesis-dao#member"
+    }
+  ]
+}

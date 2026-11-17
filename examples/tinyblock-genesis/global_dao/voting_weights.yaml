@@ -1,0 +1,38 @@
+# Planetary population-based voting weights (basis points, denominator 10000)
+# Asia: 5800, Africa: 1700, Europe: 920, North America: 750, South America: 560, Central Asia: 120, Oceania: 150 -> Total: 10000
+sub_daos:
+  - address: "0x0000000000000000000000000000000000000107"
+    region: "Asia"
+    voting_weight_bps: 5800
+    is_shell: true
+    sub_genesis_ref: null
+  - address: "0x0000000000000000000000000000000000000105"
+    region: "Africa"
+    voting_weight_bps: 1700
+    is_shell: true
+    sub_genesis_ref: null
+  - address: "0x0000000000000000000000000000000000000102"
+    region: "Europe"
+    voting_weight_bps: 920
+    is_shell: false
+    sub_genesis_ref: "sub_dao/europe/sub_genesis_ref.yaml"
+  - address: "0x0000000000000000000000000000000000000103"
+    region: "North America"
+    voting_weight_bps: 750
+    is_shell: true
+    sub_genesis_ref: null
+  - address: "0x0000000000000000000000000000000000000104"
+    region: "South America"
+    voting_weight_bps: 560
+    is_shell: true
+    sub_genesis_ref: null
+  - address: "0x0000000000000000000000000000000000000106"
+    region: "Central Asia"
+    voting_weight_bps: 120
+    is_shell: true
+    sub_genesis_ref: null
+  - address: "0x0000000000000000000000000000000000000108"
+    region: "Oceania"
+    voting_weight_bps: 150
+    is_shell: true
+    sub_genesis_ref: null

@@ -1,0 +1,17 @@
+address: "0x0000000000000000000000000000000000000402"
+entity_kind: "Service"
+did: "did:sovereign:1337:service-nextcloud"
+service_name: "NextCloud"
+oci_image: "gitea.tinyblock.dev/tinyblock/nextcloud:latest"
+oci_digest: "sha256:PLACEHOLDER_NEXTCLOUD_IMAGE_DIGEST"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "nextcloud-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "nextcloud-rebac-v1"
+  - slot_id: 6
+    plugin_id: "vcs.interface_contract"
+    commitment: "nextcloud-interface-v1"

@@ -1,18 +1,29 @@
 [workspace]
 members = [
-    "crates/node",
+    "crates/cli",
     "crates/consensus",
     "crates/attestation",
     "crates/identity",
     "crates/network",
     "crates/crypto",
+    "crates/execution",
+    "crates/sovereign-ssz",
+    "crates/car-vstate",
+    "crates/iggy-ctrl",
+    "crates/koral-verify",
+    "crates/node",
+    "crates/identity_server",
+    "wallet",
+    "tests/cluster",
 ]
+default-members = ["crates/cli"]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 authors = ["Citrullin"]
+license = "GPL-3.0-only"
 
 [workspace.dependencies]
 tokio = { version = "1.37", features = ["full"] }
@@ -20,6 +31,7 @@ eyre = "0.6"
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3"
@@ -30,6 +42,7 @@ revm-primitives = "41.0.0"
 revm-state = "41.0.0"
 revm-bytecode = "41.0.0"
 revm-database-interface = "41.0.0"
+revm = { version = "41.0.0", default-features = false, features = ["std", "secp256k1", "serde"] }
 
 # Reth dependencies
 reth-node-api = { git = "https://github.com/paradigmxyz/reth", tag = "v2.4.0" }
@@ -49,6 +62,7 @@ reth-cli-util = { git = "https://github.com/paradigmxyz/reth", tag = "v2.4.0" }
 # Ecosystem dependencies
 did-peer = "0.7.5"
 k256 = "0.14.0"
+hex = "0.4"
 ed25519-dalek = "3.0.0"
 boringtun = "0.7.1"
 nmt-rs = "0.2.5"
@@ -68,6 +82,8 @@ pqcrypto-traits = "0.3.5"
 light-poseidon = "0.4.0"
 ark-bn254 = "0.5.0"
 ark-ff = "0.5.0"
+ark-ec = "0.5.0"
+ark-serialize = "0.5.0"
 
 
 
@@ -77,6 +93,7 @@ sovereign-consensus = { path = "crates/consensus" }
 sovereign-attestation = { path = "crates/attestation" }
 sovereign-identity = { path = "crates/identity" }
 sovereign-network = { path = "crates/network" }
+car-vstate = { path = "crates/car-vstate" }
 
 [profile.dev]
 debug = 0
@@ -91,10 +108,20 @@ codegen-units = 1
 incremental = false
 
 [profile.release]
-opt-level = 0
+opt-level = 3
 codegen-units = 1
 panic = "abort"
 strip = true
-lto = false
+lto = "thin"
 incremental = false
+
+[profile.release.package.sovereign-wallet]
+opt-level = 3
+
+[profile.release.package.fips204]
+opt-level = 3
+
+[profile.release.package.fips205]
+opt-level = 3
+
 

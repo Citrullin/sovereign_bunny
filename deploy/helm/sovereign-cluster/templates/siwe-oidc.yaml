@@ -1,0 +1,53 @@
+{{- if .Values.siweOidc.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-siwe-oidc
+  labels:
+    app: sovereign-siwe-oidc
+spec:
+  replicas: {{ .Values.siweOidc.replicaCount }}
+  selector:
+    matchLabels:
+      app: sovereign-siwe-oidc
+  template:
+    metadata:
+      labels:
+        app: sovereign-siwe-oidc
+    spec:
+      containers:
+        - name: siwe-oidc
+          image: "{{ .Values.siweOidc.image.repository }}:{{ .Values.siweOidc.image.tag }}"
+          imagePullPolicy: {{ .Values.siweOidc.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.siweOidc.service.port }}
+              name: http
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: BUNNY_RPC_URL
+              value: "http://{{ .Release.Name }}-gateway:{{ .Values.gateway.service.httpPort }}"
+            - name: BUNNY_DID_REGISTRY
+              value: "0x0000000000000000000000000000000000000003"
+            - name: BUNNY_ZANZIBAR_PRECOMPILE
+              value: "0x0000000000000000000000000000000000000061"
+            - name: OIDC_ISSUER
+              value: "https://siwe.{{ .Values.global.domain }}"
+            - name: PORT
+              value: "{{ .Values.siweOidc.service.port }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-siwe-oidc
+  labels:
+    app: sovereign-siwe-oidc
+spec:
+  type: {{ .Values.siweOidc.service.type }}
+  ports:
+    - port: {{ .Values.siweOidc.service.port }}
+      targetPort: http
+      name: http
+  selector:
+    app: sovereign-siwe-oidc
+{{- end }}

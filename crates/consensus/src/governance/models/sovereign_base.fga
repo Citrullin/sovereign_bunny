@@ -1,0 +1,19 @@
+model
+  schema 1.1
+
+type user
+
+type account
+  relations
+    define owner: [user]
+    define operator: [user] or owner
+    define viewer: [user] or operator
+
+type content_namespace
+  relations
+    define owner: [user]
+    define writer: [user] or owner
+    define reader: [user] or writer
+    define pool_relay: [user]
+    define tpc_operator: [user] or owner
+

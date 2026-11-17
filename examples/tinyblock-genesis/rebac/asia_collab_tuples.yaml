@@ -1,0 +1,10 @@
+# Asia Collaborative Enforcement ReBAC relations (Namespace 1)
+tuples:
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000208" # Asia collab
+    relation: 2 # council/enforcer
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000206" # India MeitY
+  - namespace: 1
+    object_id: "0x0000000000000000000000000000000000000208"
+    relation: 2 # council/enforcer
+    subject: "did:sovereign:1337:0x0000000000000000000000000000000000000207" # China MIIT

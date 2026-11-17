@@ -1,0 +1,23 @@
+address: "0x0000000000000000000000000000000000000302"
+entity_kind: "GitRepository"
+did: "did:sovereign:1337:repo-bunny-stack"
+repo_name: "bunny-stack"
+remote_url: "https://github.com/citrullin/bunny-stack"
+local_mirror_alias: "gitea.tinyblock.dev/tinyblock/bunny-stack"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "bunny-stack-repo-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "bunny-stack-zanzibar-v1"
+  - slot_id: 3
+    plugin_id: "vcs.git_dag"
+    commitment: "GENESIS_GIT_HEAD_OID_BUNNY_STACK"
+
+threshold_control:
+  threshold: 1
+  signers:
+    - "0xa11ce00000000000000000000000000000000001"
+  scheme: "native_smart_account"

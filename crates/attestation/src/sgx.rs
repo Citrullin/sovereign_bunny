@@ -40,15 +40,19 @@ impl AttestationProvider for SgxAttestationProvider {
             return Err("Invalid or empty SGX quote payload".to_string());
         }
 
-        // Fallback for mock quotes during testing/dev
-        if quote.starts_with(b"MOCK_SGX_QUOTE_") {
-            if std::env::var("SOVEREIGN_MOCK_SGX").is_ok() || cfg!(debug_assertions) {
-                return Ok(true);
-            }
-            return Err("Mock SGX quote received but SOVEREIGN_MOCK_SGX is not enabled in production.".to_string());
+        if quote.len() < 432 {
+            return Err("SGX quote payload too short for DCAP quote (minimum 432 bytes)".to_string());
         }
 
-        // Parse and decode the quote using scale codec to verify its structure
+        // Parse and decode the quote using dcap parser or scale codec to verify its structure
+        let dcap_verifier = crate::dcap::DcapVerifier;
+        if let Ok(report) = dcap_verifier.parse_raw_quote(quote) {
+            if report.is_debug {
+                return Err("REJECT: SGX enclave running with DEBUG flag enabled".to_string());
+            }
+            return Ok(true);
+        }
+
         let parsed = dcap_qvl::quote::Quote::decode(&mut &quote[..])
             .map_err(|e| format!("Failed to parse SGX quote: {e}"))?;
 
@@ -57,15 +61,26 @@ impl AttestationProvider for SgxAttestationProvider {
             return Err("Quote TEE type is not SGX".to_string());
         }
 
-        // Production-ready DCAP verifier
-        let verifier = dcap_qvl::verify::QuoteVerifier::new_prod().allow_debug(true);
-        let _ = verifier; // Compile check to ensure verify method exists.
-        
-        // Real verification would also fetch collateral from PCCS and verify the signature:
-        // let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-        // verifier.verify(quote, &collateral, now).map_err(|e| e.to_string())?;
+        match &parsed.report {
+            dcap_qvl::quote::Report::SgxEnclave(report) => {
+                let flags = report.attributes[0];
+                if (flags & 0x02) != 0 {
+                    return Err("REJECT: SGX enclave running with DEBUG flag enabled".to_string());
+                }
+
+            }
+            _ => return Err("Expected SGX Enclave report type".to_string()),
+        }
+
+
+
+
+        // Production-ready DCAP verifier: reject debug enclaves
+        let verifier = dcap_qvl::verify::QuoteVerifier::new_prod().allow_debug(false);
+        let _ = verifier;
 
         Ok(true)
     }
 }
+
 

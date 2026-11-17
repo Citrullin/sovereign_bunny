@@ -1,0 +1,19 @@
+model
+  schema 1.1
+
+type user
+
+type safe
+  relations
+    define owner: [user]
+    define module: [safe]
+
+type role
+  relations
+    define manager: [user] or owner from safe
+    define member: [user]
+    define can_call_function: member or manager
+
+type zodiac_roles
+  relations
+    define can_call_function: [user]

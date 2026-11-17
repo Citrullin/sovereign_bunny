@@ -1,0 +1,22 @@
+address: "0x0000000000000000000000000000000000000401"
+entity_kind: "Service"
+did: "did:sovereign:1337:service-nexterp"
+service_name: "NextERP"
+oci_image: "gitea.tinyblock.dev/tinyblock/nexterp:latest"
+oci_digest: "sha256:PLACEHOLDER_OCI_IMAGE_DIGEST"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "nexterp-did-v1"
+  - slot_id: 4
+    plugin_id: "ext.sqldigest"
+    commitment: "NEXTERP_SCHEMA_DIGEST_V1"
+  - slot_id: 6
+    plugin_id: "vcs.interface_contract"
+    commitment: "nexterp-interface-v1"
+
+sql_genesis:
+  schema_ref: "sql/nexterp_schema.yaml"
+  initial_data_ref: "sql/citrullin_inserts.yaml"
+  proof_of_sql_ref: "sql/proof_of_sql_example.yaml"

@@ -2,23 +2,23 @@ const fs = require('fs');
 const path = require('path');
 
 const entrypointBytecode = fs.readFileSync(
-    path.resolve(__dirname, 'entrypoint_bytecode.txt'),
-    'utf8'
+  path.resolve(__dirname, 'entrypoint_bytecode.txt'),
+  'utf8'
 ).trim();
 
 // Ensure it starts with 0x
-const entrypointHex = entrypointBytecode.startsWith('0x') 
-    ? entrypointBytecode 
-    : '0x' + entrypointBytecode;
+const entrypointHex = entrypointBytecode.startsWith('0x')
+  ? entrypointBytecode
+  : '0x' + entrypointBytecode;
 
-const paymasterBytecode = fs.readFileSync(
-    path.resolve(__dirname, 'contracts', 'out', 'SimplePaymaster.runtime.bin'),
-    'utf8'
-).trim();
+const paymasterOutPath = path.resolve(__dirname, 'contracts', 'out', 'SimplePaymaster.runtime.bin');
+const paymasterSrcPath = path.resolve(__dirname, 'contracts', 'src', 'SimplePaymaster.runtime.bin');
+const paymasterPath = fs.existsSync(paymasterOutPath) ? paymasterOutPath : paymasterSrcPath;
+const paymasterBytecode = fs.readFileSync(paymasterPath, 'utf8').trim();
 
 const paymasterHex = paymasterBytecode.startsWith('0x')
-    ? paymasterBytecode
-    : '0x' + paymasterBytecode;
+  ? paymasterBytecode
+  : '0x' + paymasterBytecode;
 
 const genesis = {
   "config": {
@@ -62,15 +62,42 @@ const genesis = {
     "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266": {
       "balance": "0xffffffffffffffffffffffff"
     },
-    "0x918c30482462c8024ba6cf34a18ba1f8bbdb755f": {
+    "0x81f16Dc0351D44c84234F4e4514C03cE51E6Dab3": {
       "balance": "0xffffffffffffffffffffffff"
+    },
+    "0x918c30482462C8024ba6Cf34a18ba1f8bBdb755F": {
+      "balance": "0xffffffffffffffffffffffff"
+    },
+    "0x0000000000000000000000000000000000000101": {
+      "balance": "0x84595161401484a000000"
+    },
+    "0x0000000000000000000000000000000000000102": {
+      "balance": "0x211654585005212800000"
+    },
+    "0x0000000000000000000000000000000000000103": {
+      "balance": "0x211654585005212800000"
+    },
+    "0x0000000000000000000000000000000000000104": {
+      "balance": "0x1a784379d99dd42000000"
+    },
+    "0x0000000000000000000000000000000000000105": {
+      "balance": "0x1a784379d99dd42000000"
+    },
+    "0x0000000000000000000000000000000000000106": {
+      "balance": "0x13da329b63369f1800000"
+    },
+    "0x0000000000000000000000000000000000000107": {
+      "balance": "0x211654585005212800000"
+    },
+    "0x0000000000000000000000000000000000000108": {
+      "balance": "0x13da329b63369f1800000"
     }
   }
 };
 
 fs.writeFileSync(
-    path.resolve(__dirname, 'genesis.json'),
-    JSON.stringify(genesis, null, 2)
+  path.resolve(__dirname, 'genesis.json'),
+  JSON.stringify(genesis, null, 2)
 );
 
 console.log('Genesis file created successfully!');

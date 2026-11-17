@@ -1,0 +1,16 @@
+model
+  schema 1.1
+
+type user
+
+type authority
+  relations
+    define qtsp: [user]
+    define auditor: [user]
+    define can_verify_predicate: qtsp or auditor
+
+type xroad_service
+  relations
+    define provider: [user]
+    define consumer: [user]
+    define can_invoke: consumer or provider

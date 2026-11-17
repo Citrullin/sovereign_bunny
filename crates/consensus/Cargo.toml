@@ -3,6 +3,7 @@ name = "sovereign-consensus"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
 
 [dependencies]
 tokio = { workspace = true }
@@ -30,6 +31,7 @@ boringtun = { workspace = true }
 scale = { workspace = true }
 k256 = { workspace = true }
 ed25519-dalek = { workspace = true }
+sovereign-ssz = { path = "../sovereign-ssz" }
 sovereign-attestation = { path = "../attestation" }
 sovereign-identity = { path = "../identity" }
 sovereign-crypto = { path = "../crypto" }
@@ -38,8 +40,17 @@ bs58 = { workspace = true }
 fips204 = { workspace = true }
 
 c-kzg = "2.1.8"
+reqwest = { version = "0.12", features = ["json"] }
+blake3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+rand = "0.8"
+rand_chacha = "0.3"
 
 [dev-dependencies]
 serial_test = "3.1"
+
+[features]
+default = ["stub-proofs"]
+test-utils = []
+stub-proofs = []

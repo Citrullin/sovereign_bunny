@@ -3,6 +3,7 @@ name = "sovereign-network"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license = "LGPL-2.1"
 
 [dependencies]
 reed-solomon-erasure = { workspace = true }
@@ -19,4 +20,6 @@ bs58 = { workspace = true }
 futures = { workspace = true }
 did-peer = { workspace = true }
 tracing = { workspace = true }
+sovereign-ssz = { path = "../sovereign-ssz" }
+blake3 = { workspace = true }
 

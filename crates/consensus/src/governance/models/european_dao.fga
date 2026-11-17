@@ -1,0 +1,22 @@
+model
+  schema 1.1
+
+type user
+
+type department
+  relations
+    define admin: [user]
+    define lead: [user] or admin
+    define member: [user] or lead
+    define proposal_creator: member
+    define vote_delegator: member
+
+type organization
+  relations
+    define governor: [user]
+    define engineering_dept: [department]
+    define marketing_dept: [department]
+    define support_dept: [department]
+    define admin: governor
+    define can_submit_proposal: proposal_creator from engineering_dept or proposal_creator from marketing_dept or proposal_creator from support_dept
+    define can_vote: member from engineering_dept or member from marketing_dept or member from support_dept

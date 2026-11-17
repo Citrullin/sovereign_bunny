@@ -1,0 +1,19 @@
+address: "0x0000000000000000000000000000000000000106"
+entity_kind: "DAO"
+name: "Central Asia Sovereign DAO"
+region: "Central Asia"
+voting_weight_bps: 120
+is_shell: true
+did: "did:sovereign:1337:dao-central-asia"
+initial_balance: "0x0"
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "central-asia-dao-did-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "central-asia-dao-rebac-v1"
+  - slot_id: 8
+    plugin_id: "dao.voting_weight"
+    commitment: "0x0000000000000000000000000000000000000000000000000000000000000078" # 120 bps

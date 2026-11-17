@@ -1,0 +1,36 @@
+address: "0x0000000000000000000000000000000000000205"
+entity_kind: "Authority"
+did: "did:sovereign:1337:nz-mbie"
+authority_jurisdiction: "New Zealand"
+authority_body: "MBIE (Ministry of Business, Innovation and Employment)"
+authority_url: "https://www.mbie.govt.nz"
+regulatory_frameworks: ["NZ-Companies-Act", "Digital-Identity-NZ"]
+
+xroad_member_code: "NZ-MBIE-001"
+xroad_supervised_entity: null
+
+slots:
+  - slot_id: 0
+    plugin_id: "core.did_identity"
+    commitment: "nz-mbie-did-root-v1"
+  - slot_id: 1
+    plugin_id: "core.zanzibar"
+    commitment: "nz-mbie-rebac-v1"
+  - slot_id: 5
+    plugin_id: "authority.xroad_descriptor"
+    commitment: "nz-mbie-xroad-descriptor-v1"
+
+blind_note:
+  is_public: true
+  target_slot: 5
+  value: "0x0"
+  content_type: "xroad_descriptor"
+  payload:
+    member_class: "REGISTRAR"
+    member_code: "NZ-MBIE-001"
+    subsystem_code: "CorporateRegistries"
+    endpoint_url_hash: "keccak256(https://companies-register.companiesoffice.govt.nz/)"
+    cert_fingerprint_sha256: "PLACEHOLDER_NZ_MBIE_CERT_HASH"
+    protocol_version: "4.0"
+    granted_capabilities:
+      - "registry_lookup"

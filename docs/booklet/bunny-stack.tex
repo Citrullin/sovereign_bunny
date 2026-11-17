@@ -1,0 +1,195 @@
+% ============================================================================
+%  Sovereign Bunny Stack -- Packaging, Runtime and Deployment (component paper)
+%  SKELETON: outline and content-migration map only. Base: sovereign-booklet.tex
+% ============================================================================
+\documentclass[a4paper,11pt,twoside,parskip=half-,headings=small]{scrartcl}
+\input{common-preamble.tex}
+\hypersetup{pdftitle={Sovereign Bunny Stack: Packaging, Runtime and Deployment},pdfauthor={Sovereign Bunny contributors},pdfsubject={Hermetic builds, SGX enclaves, deployment, end-to-end types},pdfkeywords={sovereign bunny, stack, nixos, sgx, gramine, argocd, sbom}}
+\setpaperheads{Sovereign Bunny Stack}{Sovereign Bunny paper set -- Stack}
+
+\begin{document}
+\begin{titlepage}
+  \centering
+  \vspace*{2.2cm}
+  {\color{mute}\scshape\large Component Paper (skeleton)\par}
+  \vspace{0.6cm}
+  {\color{ink}\Huge\bfseries Sovereign Bunny Stack\par}\vspace{0.4cm}
+  {\color{accent}\Large Packaging, Runtime and Deployment\par}
+  \vspace{0.8cm}
+  {\large Hermetic builds, measured enclaves, supply-chain gates, and the operator's sovereign instance\par}
+  \vfill
+  \begin{tabular}{rl}
+    \textbf{Status}   & Skeleton -- content still lives in the whitebooklet\\
+    \textbf{Base}     & Sovereign Bunny whitebooklet v0.5\\
+    \textbf{Revision} & \code{\bookletcommit}\\
+    \textbf{Built}    & \bookletdate\\
+  \end{tabular}
+  \vspace*{2.2cm}
+\end{titlepage}
+
+\section{Purpose}
+The Stack is how the ledger is \emph{operated}: reproducible builds, signed and measured artefacts, deployment pipelines, and schemas carried unchanged from contracts to the browser.
+It makes no claims about consensus or economics. Its central contract is the \textbf{exit drill}: any operator can export state and restore on bare metal with bit-for-bit state-root equality, continuously, in CI.
+
+\section{Proposed outline and migration map}
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{4.6cm}Y@{}}
+\toprule
+\textbf{Section of this paper} & \textbf{Source in the whitebooklet (by topic)} \\
+\midrule
+Cluster versus Stack, and the local sovereign instance & Cluster vs.\ Stack subsection \\
+Hermetic NixOS builds and ArgoCD delivery & NixOS packaging, ArgoCD, end-to-end types \\
+Measured enclaves: what TEEs can and cannot do & Hardware realism; Gramine manifest \\
+Minimal Viable Security Kernel & MVSK section \\
+CRA / NIS2 evidence and SBOM witnesses & CRA and NIS2; CycloneDX SBOM parser and witness generation \\
+Exit drill and operational tests & Operational principles and tests (exit, reproducibility) \\
+Zero-open-port operator access (zkSSH, BGP peering) & Sovereign SSH; BGP peering sections \\
+Honest status of the reference implementation & Status register; regression deconstruction \\
+Reference client (local-first SDK) & New: see \cref{sec:ref_client}; builds on the end-to-end type-preservation material \\
+\bottomrule
+\end{tabularx}
+\caption{Content-migration map for the Stack paper.}
+\end{table}
+
+\section{Reference client implementation}
+\label{sec:ref_client}
+
+The ledger paper fixes four framework-neutral client invariants. This section describes how the Stack realises them today and what is planned. The TypeScript/WASM and Lit/XState choices below are \emph{reference}, not normative: another host that satisfies the invariants is equally conformant. This completes the end-to-end type-preservation pipeline (Rust and Solidity, through WASM bindings, to TypeScript) with a local-first state layer.
+
+\subsection{Four layers, one responsibility each}
+React Server Components blurred separation of concerns by mixing network calls and database queries into the view layer. The client stack avoids that with a strict vertical split.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{3.3cm}YL{2.6cm}@{}}
+\toprule
+\textbf{Layer} & \textbf{Responsibility and invariant} & \textbf{Status} \\
+\midrule
+1. Local state and persistence & Application code mutates a typed actor store and configures a storage adapter (IndexedDB or Origin Private File System in a browser; SQLite or an embedded key-value store on a node). It contains no RPC calls, no circuit imports and no consensus logic, and works fully offline & \stImpl{} (implemented in \path{wallet/ts/src/state_object_model.ts}, \path{car_reconciler.ts}, \path{storage_manager.ts}) \\
+2. Reconciler (WASM, worker) & Maintains the double-buffered Virtual CAR; on commit diffs against the last settled roots, updates accumulators, computes $\Delta_{\text{slot}}$ and the next nonce & \stImpl{} (implemented in \path{wallet/ts/src/car_reconciler.ts}, \path{car_inspector.ts}, and \path{state_object_model.ts}) \\
+3. Prover and signer bridge & Selects the circuit for each dirty slot (\path{wallet/ts/src/circuits.ts}), formats witnesses, proves, and requests one signature from a hardware or wallet signer & \stPart{} (circuit loading and wallet connector exist) \claim{verify scope} \\
+4. Transport and sync adapter & Packs the sealed frame as a \code{BNY\textbackslash x01} SSZ envelope and dispatches it onto the urgent or background lane without blocking local reads & \stPart{} (envelope tooling in \path{crates/cli}, \path{wallet/ts/src/envelopes.ts}) \claim{verify} \\
+\bottomrule
+\end{tabularx}
+\caption{Reference client layers. Status words follow the whitebooklet; scopes marked verify have not been audited for this draft.}
+\end{table}
+
+\subsection{Interface sketch}
+\begin{lstlisting}[language=TypeScript,caption={Host-neutral client interface (implemented in \code{wallet/ts/src/car\_reconciler.ts} and \code{wallet/ts/src/state\_object\_model.ts}).},label={lst:car_client}]
+// Storage and transport are pluggable host capabilities.
+export interface LocalStoreAdapter {
+  readSlot(slot: number): Promise<Uint8Array>;
+  commitAtomicBatch(nonce: bigint, dirty: Map<number, Uint8Array>): Promise<void>;
+}
+export interface SyncTransportAdapter {
+  dispatchFrame(frame: Uint8Array, lane: "urgent" | "background"): Promise<EpochReceipt>;
+}
+
+// Mirrors the normative lifecycle; Rejected is reachable from Staged and Sealed.
+export type CommitPhase =
+  | { phase: "Staged";   nonce: bigint }
+  | { phase: "Sealed";   nonce: bigint; frame: Uint8Array }
+  | { phase: "Anchored"; nonce: bigint; epoch: bigint }
+  | { phase: "Rejected"; nonce: bigint; reason: string; rolledBackFrom: bigint };
+
+export interface SovereignActorClient<TSchema> {
+  // Owned, single-writer slots only.
+  reconcile(mutator: (draft: TSchema) => void,
+            onPhase?: (s: CommitPhase) => void): Promise<CommitPhase>;
+  // Contended, cross-actor: always an explicit state machine, never a bare promise.
+  proposeIntent(intent: CrossActorIntent): ReadableStream<SagaState>;
+}
+\end{lstlisting}
+The reference client in \path{wallet/ts/src/car_reconciler.ts} and \path{wallet/ts/src/state_object_model.ts} implements this interface, supporting pluggable in-memory, IndexedDB, and SQLite storage adapters alongside framed \code{BNY\textbackslash x01} SSZ serialization.
+
+\subsection{Three edge cases the SDK must not hide}
+\begin{enumerate}
+  \item \textbf{Owned state versus multi-party contention.} Owned-slot writes commit locally and deterministically because nobody else can reject them (subject to the writer-lease rule). Anything touching another actor can fail on lock contention. The API therefore separates \code{reconcile} from \code{proposeIntent}, and the latter returns a state machine, so a developer cannot confuse a local write with a global lock.
+  \item \textbf{The latency gap between a JavaScript write and a proven, anchored one.} A local write is microseconds to milliseconds; browser proving and epoch finality are orders of magnitude slower (proving time and the ten-second epoch are targets, not measurements, for this stack \claim{unmeasured}). The status of every state atom is therefore reactive and exposes Staged, Sealed, Anchored and Rejected. Staged data must be durable before the call returns, and a resumed session must be able to find Staged work after a tab closes and finish sealing it, so closing a tab never silently loses an accepted edit.
+  \item \textbf{Host-language numerics and ordering.} Canonical state lives in SSZ linear memory (WASM) with typed-array or proxy views; amounts are fixed-point \code{bigint} or \code{u128}, never \code{number}; collections serialise in a specified canonical order. A host object model is a view, never the source of truth.
+\end{enumerate}
+
+\subsection{The State Object Model (SOM): Verifiable Declarative Reactivity}
+\label{sec:som_architecture}
+
+Drawing on the architectural lineage from John Carmack's DOOM~3 renderer to React's Virtual DOM, the client runtime demotes in-memory state to a declarative, write-only render target driven by a virtual diffing engine:
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}L{4.2cm}Y@{}}
+\toprule
+\textbf{Concept} & \textbf{Browser UI Pipeline} & \textbf{Verifiable State Pipeline (SOM)} \\
+\midrule
+Raw Source / Wire & HTML text / Network stream & Canonical SSZ / CBOR event stream from Iroh \\
+Virtual Representation & Virtual DOM (VNode tree) & Virtual State Frame ($S_{\text{virtual}}$ candidate in RAM) \\
+Diffing Engine & Fiber reconciler / Myers diff & Merkle / Register Delta reconciler ($\Delta S = S_{t+1} \ominus S_t$) \\
+Canonical Target & Real DOM (C++ browser tree) & SOM backing client memory \& local views \\
+Commit Invariant & Pixels painted to framebuffer & 32-byte cryptographic root verified by ZK circuit \\
+\bottomrule
+\end{tabularx}
+\caption{The Tripartite Mapping: DOM vs.\ VDOM vs.\ SOM.}
+\end{table}
+
+The SOM operates under four interlocking systems invariants:
+\begin{enumerate}
+  \item \textbf{Strict Unidirectional Data Flow \& Read-Only Projection:} Direct mutations to the SOM tree are strictly prohibited (accessing slot buffers returns frozen proxy projections that throw on mutation attempts). All state mutations must be dispatched as strongly typed actions:
+  \begin{equation}
+    \text{Action} \xrightarrow{\text{deReBAC Guard}} \text{Batch Queue} \xrightarrow{\text{State Fold}} S_{t+1} = f(S_t, \Delta S) \xrightarrow{\text{Patch}} \text{SOM}
+  \end{equation}
+  \item \textbf{Run-to-Completion Semantics:} State folds execute within isolated microtask turns. Intermediate states are never exposed to external listeners, eliminating reentrancy vulnerabilities and dirty reads across multi-slot transitions.
+  \item \textbf{Path-Based Fine-Grained Signals \& Event Bubbling:} Subscriptions bind to exact slot paths (e.g., \code{som.observe("slots[3].git", ...)}). Mutations only trigger subscribers on that specific sub-tree, while hierarchical events bubble upwards from leaf capability slots to the account register and manifold relay mesh.
+  \item \textbf{Fiber-Lane Transaction Squashing \& Sovereign Pure Rebase:} Rapid micro-actions within the same tick are coalesced into a single net register delta $\Delta S$, minimizing zero-knowledge witness generation. When concurrent distributed actors submit updates to an account with nonce $N+1$, the SOM performs a Git 3-way rebase: if remote head $S_{t+1(\text{remote})}$ touched Slot~2 (Blind Notes) and local uncommitted actions touched Slot~3 (Git), the actions replay cleanly on top of the remote tip without conflicts.
+\end{enumerate}
+
+\subsection{Dual-Track History Engine and Distributed Blind Note Sagas}
+\label{sec:som_history_sagas}
+
+Handling history, undos, and rollbacks on a stateless account-lattice requires decoupling local ephemeral memory from immutable ledger-committed roots:
+\begin{enumerate}
+  \item \textbf{Track A: The Ephemeral Queue (Local Virtual Undo/Redo):} Prior to block sealing and zero-knowledge proof synthesis, staged mutations reside in an in-memory virtual queue. Calling \code{som.undo()} pops uncommitted actions, recalculates the virtual frame from the committed base root, and re-notifies observers with zero ledger fees and zero cryptographic trace.
+  \item \textbf{Track B: The Monotonic Committed Chain (Invertible Delta DAG):} Once an action commits into block $B_t$, the root is locked into the ledger and the account nonce cannot be decremented. Reverting to a target block height is executed as a \textbf{Git-revert style forward compensating block} $B_{n+1}$:
+  \begin{equation}
+    \Delta S_{\text{revert}} = \bigoplus_{k=n}^{\text{target}+1} \Delta S_k^{-1}, \quad S_{n+1} = S_n \oplus \Delta S_{\text{revert}}, \quad \text{Nonce}_{n+1} = \text{Nonce}_n + 1
+  \end{equation}
+  The state is restored bit-exact to $B_{\text{target}}$ while maintaining strict monotonic sequence nonces.
+  \item \textbf{Superposition Rollback over Blind Notes:} When value moves across asynchronous accounts via blind notes, the note commitment is generated with dual nullifier keys: a spending key $\text{sk}_{\text{spend}}$ for the counterparty and a reclamation key $\text{sk}_{\text{reclaim}}$ for the sender, bounded by an on-chain decay epoch $T_{\text{decay}}$. If the counterparty goes offline or aborts, the sender emits the reclamation nullifier $\mathcal{H}(\text{sk}_{\text{reclaim}}, \rho)$ after $T_{\text{decay}}$ expires, re-absorbing the deposit locally without counterparty intervention.
+  \item \textbf{Active Compensation and Bond Slashing:} If the note was already consumed into the counterparty's Slot~2 register before a downstream step failed, the counterparty's agent is programmatically required to emit a compensating reverse refund note. Defaulting on compensation past the dispute deadline triggers the lattice slashing precompile, seizing the counterparty's bonded deposit.
+\end{enumerate}
+
+\subsection{Heres: Cognitive Swarm Architecture \& Intent-Based System}
+\label{sec:heres_swarm_ibs}
+
+The reference stack integrates an autonomous multi-agent runtime (\path{git/sovereign-heres}) operating over the stateless account-lattice:
+\begin{itemize}
+  \item \textbf{Dual-Engine Cognitive Core:} Continuous trajectory evaluation is governed by a Joint-Embedding Predictive Architecture (JEPA) world model computing representation-space energy gradients in $\mathbb{R}^{256}$, paired with an executive policy tier served via quantized 0.5B LLMs (Ollama on CPU for hermetic offline testing; vLLM continuous batching for swarm cluster deployments).
+  \item \textbf{Connectome Reflex Tier:} For high-frequency trading and rapid market-making, a \emph{Drosophila} fruit fly connectome brain (\code{ProtocerebralBridge}, \code{CentralComplex}, and \code{MushroomBodyValenceMemory}) evaluates sensory telemetry in $1$--$6\,\mu\text{s}$, executing sub-millisecond panic cancels and bilateral netting triggers without awaiting LLM inference.
+  \item \textbf{Stateless Lattice Sagas:} Multi-actor intents execute across contended slots using a decentralized Saga protocol with atomic slot reservations, epoch timeouts, and automated compensating rollbacks upon failure.
+\end{itemize}
+
+\subsection{Developer experience}
+\begin{lstlisting}[language=TypeScript,caption={Illustrative usage (names are proposals). Identifiers are placeholders supplied by the application, not fixed values.}]
+const actor = await createSovereignActor({
+  schema: erpSchema,                        // generated, end-to-end types
+  storage: new IndexedDbStorage(appName),   // local first
+  sync: new IrohSyncAdapter({ lane: "urgent" }),
+});
+
+const tx = await actor.reconcile((draft) => {
+  // Bilateral appointment tuple in Slot 1 and a typed row anchored in Slot 4,
+  // applied as one atomic virtual batch.
+  draft.slot1.zanzibar.grant({ subject: anchorDaoDid, relation: "appointed_anchor", object: draft.did });
+  draft.slot4.tables.invoices.insert({ id: invoiceId, debtor: debtorDid, amount: amountCents /* bigint */ });
+}, (s) => ui.show(s.phase));
+\end{lstlisting}
+
+\subsection{Why the boundary matters}
+Early Ethereum let implementation quirks (storage layout, provider-injection conventions, JSON-RPC assumptions) harden into de facto rules. Keeping the normative machine in the ledger paper and this SDK in the Stack paper is the guard against repeating that: the SDK may change freely so long as it passes the conformance vectors.
+
+\section{Open decisions before migration}
+\begin{itemize}
+  \item Which build and attestation claims can be backed by a reproducibility report today, and which remain specification.
+  \item Whether the Stack paper should also govern the paper build pipeline itself (this document set is built on the remote host and checksummed).
+\end{itemize}
+
+\end{document}

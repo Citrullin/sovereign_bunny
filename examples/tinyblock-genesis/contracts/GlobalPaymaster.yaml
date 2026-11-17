@@ -1,0 +1,40 @@
+address: "0x0000000000000000000000000000000013370001"
+name: "GlobalPaymaster"
+paymaster_type: "sovereign_native"
+
+execution_model:
+  role: "bundler_and_paymaster"
+  description: >
+    The GlobalPaymaster acts as both bundler and paymaster.
+    It batches UserOperations from multiple accounts, sponsors gas for
+    whitelisted DIDs (identified via DID precompile 0x03), and submits
+    the aggregated bundle as a single Sovereign transaction.
+  gas_sponsorship_policy:
+    - condition: "sender_has_valid_did"
+      sponsored: true
+    - condition: "sender_is_dao_member"
+      sponsored: true
+    - condition: "blind_note_absorption"
+      sponsored: true
+      max_gas: "0x30D40"
+  bundling:
+    max_ops_per_bundle: 128
+    bundle_submission_epoch_offset: 0
+  paymaster_account_structure:
+    treasury_pointer: "0x0000000000000000000000000000000000000101"
+    slot_for_paymaster_balance: 2
+
+remix_mapping:
+  abi_functions:
+    - "validatePaymasterUserOp(UserOperation,bytes32,uint256)"
+    - "postOp(PostOpMode,bytes,uint256)"
+  account_type: "sovereign_smart_account"
+  slot_visibility:
+    slot_0: "DID of paymaster operator (@citrullin)"
+    slot_1: "Zanzibar: who can call postOp"
+    slot_2: "Balance available for gas sponsorship"
+
+balance: "0xde0b6b3a7640000" # 1 TBL seed balance
+runtime_code: "0x608060405234801561000f575f5ffd5b506004361061003f575f3560e01c8063a9a2340914610043575b5f5ffd5b61005d60048036038101906100589190565b00"
+storage:
+  "0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000101"

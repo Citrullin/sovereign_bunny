@@ -1,0 +1,13 @@
+model
+  schema 1.1
+
+type user
+
+type repository
+  relations
+    define admin: [user]
+    define maintainer: [user] or admin
+    define contributor: [user] or maintainer
+    define can_push: contributor
+    define can_tag_release: maintainer
+    define can_modify_interface: admin

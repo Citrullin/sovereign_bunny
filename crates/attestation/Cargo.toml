@@ -3,6 +3,7 @@ name = "sovereign-attestation"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
 
 [dependencies]
 dcap-qvl = { workspace = true }

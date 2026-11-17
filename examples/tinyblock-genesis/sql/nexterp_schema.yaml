@@ -1,0 +1,30 @@
+schema_version: "1.0"
+target_account: "0x0000000000000000000000000000000000000401"
+target_slot: 4
+oci_source: "gitea.tinyblock.dev/tinyblock/nexterp:latest"
+schema_digest_algorithm: "keccak256"
+
+tables:
+  - name: "users"
+    columns:
+      - "id BIGSERIAL PRIMARY KEY"
+      - "did TEXT NOT NULL"
+      - "address TEXT NOT NULL"
+      - "role TEXT"
+      - "created_at TIMESTAMPTZ DEFAULT NOW()"
+  - name: "audit_log"
+    columns:
+      - "id BIGSERIAL PRIMARY KEY"
+      - "actor_did TEXT NOT NULL"
+      - "action TEXT NOT NULL"
+      - "payload JSONB"
+      - "epoch BIGINT"
+      - "ts TIMESTAMPTZ DEFAULT NOW()"
+  - name: "dao_membership"
+    columns:
+      - "id BIGSERIAL PRIMARY KEY"
+      - "dao_address TEXT NOT NULL"
+      - "member_address TEXT NOT NULL"
+      - "role TEXT NOT NULL"
+      - "voting_weight INT"
+      - "joined_epoch BIGINT"
